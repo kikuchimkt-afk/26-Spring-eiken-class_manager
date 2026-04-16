@@ -656,7 +656,6 @@ function showSchedulePopup(participantId) {
         li.innerHTML = `
             <span class="schedule-status">${isRegistered ? '✅' : '—'}</span>
             <span class="schedule-date">${session.date}</span>
-            <span class="schedule-title">${session.title}</span>
             ${isPast ? '<span class="schedule-past-label">済</span>' : ''}
         `;
         listEl.appendChild(li);
