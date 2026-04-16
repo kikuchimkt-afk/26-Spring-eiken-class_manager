@@ -90,8 +90,25 @@ async function syncWithCloud() {
         const response = await fetch(GAS_WEB_APP_URL);
         const data = await response.json();
         
-        // フォーム回答を参加者リストへ変換
-        newParticipantIds = new Set(); // リセット
+        // ★ 1. まずクラウドの成績データを先にマージ（空でないもののみ）
+        if (data.appData && Object.keys(data.appData).length > 0) {
+            Object.keys(data.appData).forEach(sessionId => {
+                if (appData[sessionId]) {
+                    const cloudSession = data.appData[sessionId];
+                    // 参加者データがある場合のみ上書き
+                    if (cloudSession.participants && Object.keys(cloudSession.participants).length > 0) {
+                        appData[sessionId] = cloudSession;
+                    } else {
+                        // 参加者以外のフィールド（宿題・メモ）だけ反映
+                        appData[sessionId].generalHomework = cloudSession.generalHomework || appData[sessionId].generalHomework;
+                        appData[sessionId].generalNotes = cloudSession.generalNotes || appData[sessionId].generalNotes;
+                    }
+                }
+            });
+        }
+        
+        // ★ 2. その後にフォーム回答を処理（新規参加者を追加）
+        newParticipantIds = new Set();
         if (data.formResponses && data.formResponses.length > 0) {
             processFormResponses(data.formResponses);
         }
@@ -99,15 +116,6 @@ async function syncWithCloud() {
         // 新規参加者がいれば通知を表示
         if (newParticipantIds.size > 0) {
             showNotification(`🆕 新しい申し込みが ${newParticipantIds.size} 件あります！`);
-        }
-        
-        // 成績データをローカルへ反映
-        if (data.appData && Object.keys(data.appData).length > 0) {
-            Object.keys(data.appData).forEach(sessionId => {
-                if (appData[sessionId]) {
-                    appData[sessionId] = data.appData[sessionId];
-                }
-            });
         }
         
         localStorage.setItem('eikenClassManagerData', JSON.stringify(appData));
@@ -134,7 +142,7 @@ function updateHeader() {
     const sessionInfo = sessionsInfo.find(s => s.id === currentSessionId);
     if (sessionInfo) {
         document.getElementById('currentDateTitle').textContent = sessionInfo.date;
-        document.getElementById('currentSessionInfo').textContent = sessionInfo.title;
+        document.getElementById('currentSessionInfo').textContent = '';
         document.getElementById('emptyState').style.display = 'none';
         document.getElementById('mainScrollable').style.display = 'block';
     }
@@ -207,7 +215,10 @@ function processFormResponses(formResponses) {
         // 参加希望日に応じて日誌に割り当てる
         Object.keys(appData).forEach(sessionId => {
             const sessionData = sessionsInfo.find(s => s.id === sessionId);
-            if (sessionData && rawAttend) {
+            if (!sessionData) return;
+            
+            if (rawAttend) {
+                // 参加希望日の指定がある場合：マッチする日程だけに追加
                 const dateStr = sessionData.date.substring(0, sessionData.date.indexOf('(') > -1 ? sessionData.date.indexOf('(') : sessionData.date.length);
                 const wantsToAttend = rawAttend.includes(dateStr);
                 
@@ -222,6 +233,13 @@ function processFormResponses(formResponses) {
                     if (!pData.rpScore && !pData.apScore && !pData.remarks) {
                         delete appData[sessionId].participants[existing.id];
                     }
+                }
+            } else {
+                // 参加希望日の指定がない場合：全日程に追加
+                if (!appData[sessionId].participants[existing.id]) {
+                    appData[sessionId].participants[existing.id] = {
+                        attended: true, rpContent: '', rpScore: '', apContent: '', apScore: '', remarks: ''
+                    };
                 }
             }
         });
@@ -333,7 +351,6 @@ function renderSidebar() {
         li.innerHTML = `
             <div>
                 <span class="date-title">${session.date}</span>
-                <span class="date-subtitle">${session.title}</span>
             </div>
         `;
         list.appendChild(li);
@@ -347,7 +364,7 @@ async function selectSession(sessionId) {
     
     const sessionInfo = sessionsInfo.find(s => s.id === sessionId);
     document.getElementById('currentDateTitle').textContent = sessionInfo.date;
-    document.getElementById('currentSessionInfo').textContent = sessionInfo.title;
+    document.getElementById('currentSessionInfo').textContent = '';
 
     document.getElementById('emptyState').style.display = 'none';
     document.getElementById('mainScrollable').style.display = 'block';
