@@ -1,0 +1,78 @@
+// ====== 初期設定 ======
+const FORM_SHEET_NAME = "フォームの回答 1";
+const STORAGE_SHEET_NAME = "アプリ保存用";
+
+// 1. はじめに1回だけ「実行」して保存用シートを作成します
+function setup() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss.getSheetByName(STORAGE_SHEET_NAME)) {
+    const sheet = ss.insertSheet(STORAGE_SHEET_NAME);
+    sheet.getRange('A1').setValue('{}');
+  }
+}
+
+// 2. データの取得（GETリクエスト）
+function doGet(e) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // フォーム回答データの取得
+  const formSheet = ss.getSheetByName(FORM_SHEET_NAME);
+  let formResponses = [];
+  if (formSheet) {
+    const data = formSheet.getDataRange().getValues();
+    const headers = data[0];
+    for (let i = 1; i < data.length; i++) {
+      let row = {};
+      headers.forEach((h, colIdx) => {
+        row[String(h).trim()] = data[i][colIdx];
+      });
+      formResponses.push(row);
+    }
+  }
+
+  // 保存済みデータの取得
+  const storageSheet = ss.getSheetByName(STORAGE_SHEET_NAME);
+  let appDataStr = "{}";
+  if (storageSheet) {
+    appDataStr = storageSheet.getRange('A1').getValue() || "{}";
+  }
+
+  const response = {
+    formResponses: formResponses,
+    appData: JSON.parse(appDataStr)
+  };
+
+  return ContentService.createTextOutput(JSON.stringify(response))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// 3. データの保存（POSTリクエスト - HTMLフォーム送信対応）
+function doPost(e) {
+  try {
+    let appDataStr = '{}';
+    
+    // フォーム送信（application/x-www-form-urlencoded）の場合
+    if (e.parameter && e.parameter.data) {
+      appDataStr = e.parameter.data;
+    }
+    // JSON送信（text/plain）の場合
+    else if (e.postData && e.postData.contents) {
+      const payload = JSON.parse(e.postData.contents);
+      appDataStr = JSON.stringify(payload.appData);
+    }
+    
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const storageSheet = ss.getSheetByName(STORAGE_SHEET_NAME);
+    
+    if (storageSheet) {
+      storageSheet.getRange('A1').setValue(appDataStr);
+      return ContentService.createTextOutput(JSON.stringify({ status: "success" }))
+        .setMimeType(ContentService.MimeType.JSON);
+    } else {
+      throw new Error("保存用シートが見つかりません。");
+    }
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({ status: "error", message: error.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}

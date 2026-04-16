@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>英検勉強会 日誌管理</title>
+    <link rel="stylesheet" href="style.css?v=5">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+</head>
+<body>
+    <div class="app-container">
+        <!-- サイドバー：日程リスト -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>日程・Session</h2>
+            </div>
+            <ul class="date-list" id="dateList">
+                <!-- JSで生成 -->
+            </ul>
+            <div class="sidebar-footer" style="padding: 20px; border-top: 1px solid var(--border); margin-top: auto;">
+                <button class="btn primary-btn" style="width: 100%; display: block; text-align: center; background-color: var(--success); cursor: pointer; font-size: 13px; border: none;" onclick="syncWithCloud()">
+                    クラウドから最新読込
+                </button>
+                <small style="display: block; margin-top: 8px; color: var(--text-sec); font-size: 11px; text-align: center;">Googleフォームの回答と同期</small>
+            </div>
+        </aside>
+
+        <!-- メイン画面 -->
+        <main class="main-content">
+            <header class="main-header">
+                <div style="display: flex; align-items: center; gap: 16px;">
+                    <button id="sidebarToggle" onclick="toggleSidebar()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: var(--text-main); padding: 4px; border-radius: 6px;">☰</button>
+                    <div class="header-info">
+                        <h1 id="currentDateTitle">日付を選択</h1>
+                        <p class="subtitle" id="currentSessionInfo">セッションの概要がここに表示されます</p>
+                    </div>
+                </div>
+                
+                <div class="header-actions">
+                    <span id="saveStatus" class="save-status"></span>
+                    <button class="btn primary-btn" onclick="saveData()">データを保存</button>
+                </div>
+            </header>
+
+            <div class="content-scrollable" id="mainScrollable" style="display: none;">
+                <!-- 参加者リスト・個別学習記録 -->
+                <section class="card">
+                    <div class="card-header">
+                        <h3>参加者・学習実績記録</h3>
+                        <div style="display: flex; gap: 12px; align-items: center;">
+                            <button class="btn primary-btn" style="padding: 4px 12px; font-size: 13px; background-color: var(--accent);" onclick="addParticipant()">＋ 新規追加</button>
+                            <span class="badge" id="participantCount">0名</span>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th width="60">出欠</th>
+                                    <th width="120">氏名</th>
+                                    <th width="70">学年</th>
+                                    <th width="80">受験級</th>
+                                    <th width="70">タブ</th>
+                                    <th width="220" style="color:var(--accent);">ReadPass (年/回)</th>
+                                    <th width="80">Rスコア</th>
+                                    <th width="220" style="color:var(--danger);">AudiPass (年/回)</th>
+                                    <th width="80">Lスコア</th>
+                                    <th>備考・個別宿題</th>
+                                    <th width="40"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="participantTableBody">
+                                <!-- JSで生成 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- 全体メモ・宿題記録 -->
+                <section class="card">
+                    <div class="card-header">
+                        <h3>本日の総括・全体宿題</h3>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="generalHomework">全体共通の宿題</label>
+                            <textarea id="generalHomework" rows="3" placeholder="全体に出した宿題があれば記入してください..."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="generalNotes">日誌・引継ぎ事項</label>
+                            <textarea id="generalNotes" rows="3" placeholder="クラス全体の様子、次回の担当者への引継ぎ事項等..."></textarea>
+                        </div>
+                    </div>
+                </section>
+            </div>
+            
+            <div class="empty-state" id="emptyState">
+                <div class="empty-icon">📅</div>
+                <h2>日程を選択してください</h2>
+                <p>左側のサイドバーから記録したい日程を選ぶと、参加者リストが表示されます。</p>
+            </div>
+        </main>
+    </div>
+
+    <!-- 削除確認モーダル -->
+    <div id="deleteModal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <h3 style="margin-bottom: 12px; color: var(--text-main); font-size: 18px;">参加者の削除</h3>
+            <p id="deleteModalMessage" style="margin-bottom: 24px; font-size: 14px; line-height: 1.6;"></p>
+            <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                <button type="button" class="btn" style="background: var(--input-bg); color: var(--text-main);" onclick="closeDeleteModal()">キャンセル</button>
+                <button type="button" class="btn primary-btn" style="background: var(--danger); outline: none;" id="confirmDeleteBtn">削除する</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="spinner"></div>
+        <div class="loading-text" id="loadingText">クラウドと同期中...</div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="app.js?v=12"></script>
+</body>
+</html>
