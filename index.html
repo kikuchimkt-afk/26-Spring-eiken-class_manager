@@ -4,11 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>英検勉強会 日誌管理</title>
-    <link rel="stylesheet" href="style.css?v=5">
+    <link rel="stylesheet" href="style.css?v=13">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <meta name="apple-mobile-web-app-capable" content="yes">
 </head>
 <body>
+    <!-- 新規申し込み通知バナー -->
+    <div id="notificationBanner" class="notification-banner">
+        <div class="notif-text">
+            <span>🔔</span>
+            <span id="notifMessage">新しい申し込みがあります</span>
+        </div>
+        <button class="notif-close" onclick="dismissNotification()">OK</button>
+    </div>
+
     <div class="app-container">
         <!-- サイドバー：日程リスト -->
         <aside class="sidebar">
@@ -18,6 +27,7 @@
             <ul class="date-list" id="dateList">
                 <!-- JSで生成 -->
             </ul>
+            <button class="add-session-btn" onclick="showAddSessionModal()">＋ 日程を追加</button>
             <div class="sidebar-footer" style="padding: 20px; border-top: 1px solid var(--border); margin-top: auto;">
                 <button class="btn primary-btn" style="width: 100%; display: block; text-align: center; background-color: var(--success); cursor: pointer; font-size: 13px; border: none;" onclick="syncWithCloud()">
                     クラウドから最新読込
@@ -115,6 +125,27 @@
         </div>
     </div>
 
+    <!-- 日程追加モーダル -->
+    <div id="addSessionModal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <h3 style="margin-bottom: 16px; color: var(--text-main); font-size: 18px;">📅 日程を追加</h3>
+            <div class="session-modal-grid">
+                <div>
+                    <label for="newSessionDate">日付</label>
+                    <input type="text" id="newSessionDate" placeholder="例: 5月30日(土)">
+                </div>
+                <div>
+                    <label for="newSessionTitle">タイトル</label>
+                    <input type="text" id="newSessionTitle" placeholder="例: Day 7: 補講">
+                </div>
+            </div>
+            <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                <button type="button" class="btn" style="background: var(--input-bg); color: var(--text-main);" onclick="closeAddSessionModal()">キャンセル</button>
+                <button type="button" class="btn primary-btn" onclick="addSession()">追加する</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Loading Overlay -->
     <div id="loadingOverlay" class="loading-overlay">
         <div class="spinner"></div>
@@ -123,6 +154,6 @@
 
     <!-- Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="app.js?v=12"></script>
+    <script src="app.js?v=13"></script>
 </body>
 </html>

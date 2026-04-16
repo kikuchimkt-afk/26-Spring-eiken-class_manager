@@ -1,5 +1,5 @@
-// モックデータ: 日程情報
-const sessionsInfo = [
+// 日程情報（動的に追加可能）
+let sessionsInfo = [
     { id: 'day1', date: '4月18日(土)', title: 'Day 1: 基礎力チェックと語彙' },
     { id: 'day2', date: '4月25日(土)', title: 'Day 2: リーディング演習' },
     { id: 'day3', date: '5月2日(土)', title: 'Day 3: リスニング演習' },
@@ -44,9 +44,15 @@ const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbz2lwmv77SBY8kD
 // アプリの状態
 let currentSessionId = null;
 let appData = {};
+let newParticipantIds = new Set(); // 今回の同期で新しく追加された参加者を追跡
 
 // 初期化
 function init() {
+    // 保存済みの日程を読み込む
+    const savedSessions = localStorage.getItem('eikenClassManagerSessions');
+    if (savedSessions) {
+        sessionsInfo = JSON.parse(savedSessions);
+    }
     loadData();
     renderSidebar();
 }
@@ -85,8 +91,14 @@ async function syncWithCloud() {
         const data = await response.json();
         
         // フォーム回答を参加者リストへ変換
+        newParticipantIds = new Set(); // リセット
         if (data.formResponses && data.formResponses.length > 0) {
             processFormResponses(data.formResponses);
+        }
+        
+        // 新規参加者がいれば通知を表示
+        if (newParticipantIds.size > 0) {
+            showNotification(`🆕 新しい申し込みが ${newParticipantIds.size} 件あります！`);
         }
         
         // 成績データをローカルへ反映
@@ -185,6 +197,7 @@ function processFormResponses(formResponses) {
                 schoolYear: schoolYear
             };
             participantsList.push(existing);
+            newParticipantIds.add(existing.id); // 新規としてマーク
         } else {
             existing.grade = grade;
             existing.hasTablet = hasTablet;
@@ -490,6 +503,7 @@ function renderMainContent() {
             </td>
             <td>
                 <input type="text" value="${p.name}" onchange="updateParticipantInfo('${p.id}', 'name', this.value)" style="width: 100px; padding: 4px; border: 1px solid var(--border-color); border-radius: 4px; font-weight: bold;">
+                ${newParticipantIds.has(p.id) ? '<span class="badge-new">NEW</span>' : ''}
             </td>
             <td>
                 <input type="text" value="${p.schoolYear || ''}" onchange="updateParticipantInfo('${p.id}', 'schoolYear', this.value)" style="width: 55px; text-align: center; border: 1px solid var(--border-color); border-radius: 4px; padding: 4px; font-size: 0.9em;">
@@ -570,6 +584,66 @@ function toggleAttendance(id) {
     document.getElementById(`apContent_${id}`).disabled = !isChecked;
     document.getElementById(`apScore_${id}`).disabled = !isChecked;
     document.getElementById(`remarks_${id}`).disabled = !isChecked;
+}
+// ====== 通知バナー ======
+function showNotification(message) {
+    const banner = document.getElementById('notificationBanner');
+    const msgEl = document.getElementById('notifMessage');
+    if (banner && msgEl) {
+        msgEl.textContent = message;
+        banner.classList.add('show');
+    }
+}
+
+function dismissNotification() {
+    const banner = document.getElementById('notificationBanner');
+    if (banner) {
+        banner.classList.remove('show');
+    }
+    // Newバッジもクリア
+    newParticipantIds.clear();
+    if (currentSessionId) {
+        renderMainContent();
+    }
+}
+
+// ====== 日程追加 ======
+function showAddSessionModal() {
+    document.getElementById('newSessionDate').value = '';
+    document.getElementById('newSessionTitle').value = '';
+    document.getElementById('addSessionModal').style.display = 'flex';
+    document.getElementById('newSessionDate').focus();
+}
+
+function closeAddSessionModal() {
+    document.getElementById('addSessionModal').style.display = 'none';
+}
+
+function addSession() {
+    const date = document.getElementById('newSessionDate').value.trim();
+    const title = document.getElementById('newSessionTitle').value.trim();
+    
+    if (!date) {
+        alert('日付を入力してください。');
+        return;
+    }
+    
+    const newId = 'day_' + Date.now();
+    const newSession = {
+        id: newId,
+        date: date,
+        title: title || '追加日程'
+    };
+    
+    sessionsInfo.push(newSession);
+    appData[newId] = { generalHomework: '', generalNotes: '', participants: {} };
+    
+    // 保存
+    localStorage.setItem('eikenClassManagerSessions', JSON.stringify(sessionsInfo));
+    localStorage.setItem('eikenClassManagerData', JSON.stringify(appData));
+    
+    closeAddSessionModal();
+    renderSidebar();
 }
 
 // 起動

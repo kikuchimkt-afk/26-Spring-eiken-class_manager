@@ -467,3 +467,111 @@ input:checked + .slider:before {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
+
+/* 新規申し込み通知バナー */
+.notification-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 5000;
+    background: linear-gradient(135deg, #007aff, #5856d6);
+    color: white;
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 14px;
+    font-weight: 600;
+    box-shadow: 0 4px 20px rgba(0,122,255,0.3);
+    transform: translateY(-100%);
+    transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+}
+.notification-banner.show {
+    transform: translateY(0);
+}
+.notification-banner .notif-text {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.notification-banner .notif-close {
+    background: rgba(255,255,255,0.25);
+    border: none;
+    color: white;
+    font-size: 13px;
+    padding: 6px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background 0.2s;
+}
+.notification-banner .notif-close:hover {
+    background: rgba(255,255,255,0.4);
+}
+
+/* Newバッジ */
+.badge-new {
+    display: inline-block;
+    background: linear-gradient(135deg, #ff3b30, #ff6b6b);
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 10px;
+    margin-left: 6px;
+    letter-spacing: 0.5px;
+    vertical-align: middle;
+    animation: badgePulse 2s ease-in-out infinite;
+}
+@keyframes badgePulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+/* 日程追加ボタン */
+.add-session-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: calc(100% - 32px);
+    margin: 8px 16px;
+    padding: 10px;
+    background: var(--input-bg);
+    border: 2px dashed var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-sec);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.add-session-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(0,122,255,0.05);
+}
+
+/* 日程追加モーダル */
+.session-modal-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+.session-modal-grid label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-sec);
+    margin-bottom: 4px;
+    display: block;
+}
+.session-modal-grid input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    background: var(--input-bg);
+    color: var(--text-main);
+}
