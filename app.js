@@ -502,7 +502,8 @@ function renderMainContent() {
                 </label>
             </td>
             <td>
-                <input type="text" value="${p.name}" onchange="updateParticipantInfo('${p.id}', 'name', this.value)" style="width: 100px; padding: 4px; border: 1px solid var(--border-color); border-radius: 4px; font-weight: bold;">
+                <input type="text" value="${p.name}" onchange="updateParticipantInfo('${p.id}', 'name', this.value)" style="width: 90px; padding: 4px; border: 1px solid var(--border-color); border-radius: 4px; font-weight: bold;">
+                <button type="button" onclick="showSchedulePopup('${p.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;padding:2px;vertical-align:middle;" title="参加日程を確認">📅</button>
                 ${newParticipantIds.has(p.id) ? '<span class="badge-new">NEW</span>' : ''}
             </td>
             <td>
@@ -605,6 +606,50 @@ function dismissNotification() {
     if (currentSessionId) {
         renderMainContent();
     }
+}
+
+// ====== 参加日程ポップアップ ======
+function showSchedulePopup(participantId) {
+    const p = participantsList.find(x => x.id === participantId);
+    if (!p) return;
+    
+    document.getElementById('schedulePopupName').textContent = p.name;
+    
+    const listEl = document.getElementById('schedulePopupList');
+    listEl.innerHTML = '';
+    
+    // 今日の日付を取得（月日で比較用）
+    const today = new Date();
+    const todayStr = `${today.getMonth() + 1}月${today.getDate()}日`;
+    
+    sessionsInfo.forEach(session => {
+        const isRegistered = appData[session.id] && appData[session.id].participants[participantId];
+        
+        // 日付文字列から月日を抽出して過去・未来を判定
+        const dateMatch = session.date.match(/(\d+)月(\d+)日/);
+        let isPast = false;
+        if (dateMatch) {
+            const sessionDate = new Date(today.getFullYear(), parseInt(dateMatch[1]) - 1, parseInt(dateMatch[2]));
+            const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+            isPast = sessionDate < todayMidnight;
+        }
+        
+        const li = document.createElement('div');
+        li.className = 'schedule-item' + (isRegistered ? ' registered' : ' not-registered') + (isPast ? ' past' : '');
+        li.innerHTML = `
+            <span class="schedule-status">${isRegistered ? '✅' : '—'}</span>
+            <span class="schedule-date">${session.date}</span>
+            <span class="schedule-title">${session.title}</span>
+            ${isPast ? '<span class="schedule-past-label">済</span>' : ''}
+        `;
+        listEl.appendChild(li);
+    });
+    
+    document.getElementById('schedulePopup').style.display = 'flex';
+}
+
+function closeSchedulePopup() {
+    document.getElementById('schedulePopup').style.display = 'none';
 }
 
 // ====== 日程追加 ======

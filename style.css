@@ -575,3 +575,51 @@ input:checked + .slider:before {
     background: var(--input-bg);
     color: var(--text-main);
 }
+
+/* 参加日程ポップアップ */
+.schedule-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    margin-bottom: 4px;
+    font-size: 14px;
+    transition: background 0.15s;
+}
+.schedule-item.registered {
+    background: rgba(52, 199, 89, 0.1);
+    border-left: 3px solid var(--success);
+}
+.schedule-item.not-registered {
+    background: var(--input-bg);
+    border-left: 3px solid transparent;
+    opacity: 0.5;
+}
+.schedule-item.past {
+    opacity: 0.45;
+}
+.schedule-status {
+    font-size: 16px;
+    width: 24px;
+    text-align: center;
+    flex-shrink: 0;
+}
+.schedule-date {
+    font-weight: 600;
+    min-width: 100px;
+    color: var(--text-main);
+}
+.schedule-title {
+    color: var(--text-sec);
+    font-size: 13px;
+    flex: 1;
+}
+.schedule-past-label {
+    font-size: 11px;
+    color: var(--text-sec);
+    background: var(--input-bg);
+    padding: 2px 8px;
+    border-radius: 10px;
+    flex-shrink: 0;
+}
