@@ -118,26 +118,21 @@
         <div class="modal-content">
             <h3 style="margin-bottom: 12px; color: var(--text-main); font-size: 18px;">参加者の削除</h3>
             <p id="deleteModalMessage" style="margin-bottom: 24px; font-size: 14px; line-height: 1.6;"></p>
-            <div style="display: flex; gap: 12px; justify-content: flex-end;">
-                <button type="button" class="btn" style="background: var(--input-bg); color: var(--text-main);" onclick="closeDeleteModal()">キャンセル</button>
-                <button type="button" class="btn primary-btn" style="background: var(--danger); outline: none;" id="confirmDeleteBtn">削除する</button>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <button type="button" class="btn" style="width:100%; background: var(--input-bg); color: var(--text-main); border: 1px solid var(--border);" onclick="deleteFromCurrentSession()">📅 この日のみ削除</button>
+                <button type="button" class="btn" style="width:100%; background: var(--danger); color: white; border: none;" onclick="deleteFromAllSessions()">🗑️ 全日程から完全に削除</button>
+                <button type="button" class="btn" style="width:100%; background: transparent; color: var(--text-sec); border: none;" onclick="closeDeleteModal()">キャンセル</button>
             </div>
         </div>
     </div>
 
     <!-- 日程追加モーダル -->
     <div id="addSessionModal" class="modal-overlay" style="display: none;">
-        <div class="modal-content">
+        <div class="modal-content" style="max-width: 320px;">
             <h3 style="margin-bottom: 16px; color: var(--text-main); font-size: 18px;">📅 日程を追加</h3>
-            <div class="session-modal-grid">
-                <div>
-                    <label for="newSessionDate">日付</label>
-                    <input type="text" id="newSessionDate" placeholder="例: 5月30日(土)">
-                </div>
-                <div>
-                    <label for="newSessionTitle">タイトル</label>
-                    <input type="text" id="newSessionTitle" placeholder="例: Day 7: 補講">
-                </div>
+            <div style="margin-bottom: 20px;">
+                <label for="newSessionDate" style="font-size: 13px; font-weight: 600; color: var(--text-sec); display: block; margin-bottom: 6px;">日付を選択</label>
+                <input type="date" id="newSessionDate" style="width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 16px; background: var(--input-bg); color: var(--text-main);">
             </div>
             <div style="display: flex; gap: 12px; justify-content: flex-end;">
                 <button type="button" class="btn" style="background: var(--input-bg); color: var(--text-main);" onclick="closeAddSessionModal()">キャンセル</button>

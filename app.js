@@ -44,7 +44,7 @@ const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbz2lwmv77SBY8kD
 // アプリの状態
 let currentSessionId = null;
 let appData = {};
-let newParticipantIds = new Set(); // 今回の同期で新しく追加された参加者を追跡
+let newParticipantIds = new Set(); // 未確認の新規参加者を追跡（localStorageに永続化）
 
 // 初期化
 function init() {
@@ -52,6 +52,11 @@ function init() {
     const savedSessions = localStorage.getItem('eikenClassManagerSessions');
     if (savedSessions) {
         sessionsInfo = JSON.parse(savedSessions);
+    }
+    // 未確認のNEWバッジを復元
+    const savedNewIds = localStorage.getItem('eikenNewParticipantIds');
+    if (savedNewIds) {
+        newParticipantIds = new Set(JSON.parse(savedNewIds));
     }
     loadData();
     renderSidebar();
@@ -113,9 +118,10 @@ async function syncWithCloud() {
             processFormResponses(data.formResponses);
         }
         
-        // 新規参加者がいれば通知を表示
+        // 新規参加者がいれば通知を表示し、localStorageに保存
         if (newParticipantIds.size > 0) {
             showNotification(`🆕 新しい申し込みが ${newParticipantIds.size} 件あります！`);
+            localStorage.setItem('eikenNewParticipantIds', JSON.stringify([...newParticipantIds]));
         }
         
         localStorage.setItem('eikenClassManagerData', JSON.stringify(appData));
@@ -448,16 +454,14 @@ function addParticipant() {
 // モーダル管理用
 let participantToDelete = null;
 
-// 参加者の削除（モーダル表示）
+// 参加者の削除（モーダル表示：この日 or 全日程の選択）
 function deleteParticipant(id) {
     const p = participantsList.find(x => x.id === id);
     if (!p) return;
     
     participantToDelete = id;
-    document.getElementById('deleteModalMessage').innerHTML = `<strong>${p.name}</strong> さんのデータを完全に削除してもよろしいですか？<br><br><span style="color:var(--text-sec); font-size: 13px;">※全日程の記録もすべて消去されます。</span>`;
+    document.getElementById('deleteModalMessage').innerHTML = `<strong>${p.name}</strong> さんをどの範囲で削除しますか？`;
     document.getElementById('deleteModal').style.display = 'flex';
-    
-    document.getElementById('confirmDeleteBtn').onclick = executeDeleteParticipant;
 }
 
 // モーダル閉じる
@@ -466,26 +470,38 @@ function closeDeleteModal() {
     participantToDelete = null;
 }
 
-// 実際の削除実行
-function executeDeleteParticipant() {
+// この日のみ削除
+function deleteFromCurrentSession() {
+    if (!participantToDelete || !currentSessionId) return;
+    const id = participantToDelete;
+
+    // 現在の日程からのみ削除
+    if (appData[currentSessionId] && appData[currentSessionId].participants[id]) {
+        delete appData[currentSessionId].participants[id];
+    }
+    
+    localStorage.setItem('eikenClassManagerData', JSON.stringify(appData));
+    closeDeleteModal();
+    renderMainContent();
+}
+
+// 全日程から削除
+function deleteFromAllSessions() {
     if (!participantToDelete) return;
     const id = participantToDelete;
 
-    // リストから削除
+    // 参加者リストから完全削除
     participantsList = participantsList.filter(x => x.id !== id);
     
-    // 各日程のデータから削除
+    // 全日程のデータから削除
     Object.keys(appData).forEach(sessionId => {
         if (appData[sessionId].participants[id]) {
             delete appData[sessionId].participants[id];
         }
     });
     
-    // 保存
     localStorage.setItem('eikenClassManagerParticipants', JSON.stringify(participantsList));
     localStorage.setItem('eikenClassManagerData', JSON.stringify(appData));
-    
-    // 閉じて再描画
     closeDeleteModal();
     renderMainContent();
 }
@@ -618,8 +634,9 @@ function dismissNotification() {
     if (banner) {
         banner.classList.remove('show');
     }
-    // Newバッジもクリア
+    // Newバッジもクリア（永続化も解除）
     newParticipantIds.clear();
+    localStorage.removeItem('eikenNewParticipantIds');
     if (currentSessionId) {
         renderMainContent();
     }
@@ -671,9 +688,7 @@ function closeSchedulePopup() {
 // ====== 日程追加 ======
 function showAddSessionModal() {
     document.getElementById('newSessionDate').value = '';
-    document.getElementById('newSessionTitle').value = '';
     document.getElementById('addSessionModal').style.display = 'flex';
-    document.getElementById('newSessionDate').focus();
 }
 
 function closeAddSessionModal() {
@@ -681,19 +696,23 @@ function closeAddSessionModal() {
 }
 
 function addSession() {
-    const date = document.getElementById('newSessionDate').value.trim();
-    const title = document.getElementById('newSessionTitle').value.trim();
+    const dateValue = document.getElementById('newSessionDate').value;
     
-    if (!date) {
-        alert('日付を入力してください。');
+    if (!dateValue) {
+        alert('日付を選択してください。');
         return;
     }
+    
+    // yyyy-mm-dd → "X月Y日(曜日)" に変換
+    const d = new Date(dateValue + 'T00:00:00');
+    const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+    const dateStr = `${d.getMonth() + 1}月${d.getDate()}日(${dayNames[d.getDay()]})`;
     
     const newId = 'day_' + Date.now();
     const newSession = {
         id: newId,
-        date: date,
-        title: title || '追加日程'
+        date: dateStr,
+        title: ''
     };
     
     sessionsInfo.push(newSession);
