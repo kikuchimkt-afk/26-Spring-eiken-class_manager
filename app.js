@@ -197,7 +197,9 @@ function processFormResponses(formResponses) {
         else if (gradeStr.includes('準1級')) grade = '準1級';
         else if (gradeStr.includes('1級')) grade = '1級';
         
-        const hasTablet = tabletKey ? String(row[tabletKey]).includes('持参する') : false;
+        // 「希望しない」= 自分のタブレットを持参する → hasTablet: true
+        // 「希望する」 = 貸し出し希望（持参しない）  → hasTablet: false
+        const hasTablet = tabletKey ? String(row[tabletKey]).includes('希望しない') : false;
         const rawAttend = attendKey ? String(row[attendKey] || '') : '';
 
         // 新規か更新かを判定
