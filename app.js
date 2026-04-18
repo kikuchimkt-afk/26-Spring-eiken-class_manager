@@ -15,6 +15,32 @@ let participantsList = [
     { id: 'p3', name: '鈴木 健吉', grade: '3級', hasTablet: true, schoolYear: '中3' },
 ];
 
+// ★ 受験級ごとの配色（難易度が高いほど濃い寒色系、低いほど暖色系）
+//   ライトモード・ダークモード両方で読める彩度の高い背景 + 白文字を採用
+const GRADE_COLORS = {
+    '1級':         { bg: '#7b1f2e', fg: '#ffffff' }, // 深い赤
+    '準1級':       { bg: '#5e2a8c', fg: '#ffffff' }, // 紫
+    '2級':         { bg: '#1e4d9c', fg: '#ffffff' }, // 濃い青
+    '準2級プラス': { bg: '#006a72', fg: '#ffffff' }, // ティール
+    '準2級':       { bg: '#2e7d32', fg: '#ffffff' }, // 緑
+    '3級':         { bg: '#689f38', fg: '#ffffff' }, // ライム緑
+    '4級':         { bg: '#ef6c00', fg: '#ffffff' }, // オレンジ
+    '5級':         { bg: '#c2185b', fg: '#ffffff' }  // ピンク
+};
+function getGradeStyle(grade) {
+    const c = GRADE_COLORS[grade];
+    if (!c) return '';
+    return `background-color: ${c.bg}; color: ${c.fg}; font-weight: 600; border-color: ${c.bg};`;
+}
+// プルダウンの options 各自にも色を付ける（ブラウザ対応は限定的だが付けておく）
+function getGradeOptionsHTML(currentGrade) {
+    return ['1級', '準1級', '2級', '準2級プラス', '準2級', '3級', '4級', '5級'].map(g => {
+        const c = GRADE_COLORS[g] || { bg: 'inherit', fg: 'inherit' };
+        const sel = currentGrade === g ? 'selected' : '';
+        return `<option value="${g}" style="background-color: ${c.bg}; color: ${c.fg};" ${sel}>${g}</option>`;
+    }).join('');
+}
+
 // 過去問の選択肢を生成する（古い順）
 function getPastPaperOptions(grade) {
     let options = ['<option value="">未選択/その他</option>'];
@@ -798,8 +824,8 @@ function renderMainContent() {
                 <input type="text" value="${p.schoolYear || ''}" onchange="updateParticipantInfo('${p.id}', 'schoolYear', this.value)" style="width: 55px; text-align: center; border: 1px solid var(--border-color); border-radius: 4px; padding: 4px; font-size: 0.9em;">
             </td>
             <td>
-                <select onchange="updateParticipantInfo('${p.id}', 'grade', this.value)" style="width: 75px; padding: 4px; border: 1px solid var(--border-color); border-radius: 4px;">
-                    ${['1級', '準1級', '2級', '準2級プラス', '準2級', '3級', '4級', '5級'].map(g => `<option value="${g}" ${p.grade === g ? 'selected' : ''}>${g}</option>`).join('')}
+                <select onchange="updateParticipantInfo('${p.id}', 'grade', this.value)" style="width: 95px; padding: 4px 6px; border: 1px solid var(--border-color); border-radius: 4px; text-align: center; ${getGradeStyle(p.grade)}">
+                    ${getGradeOptionsHTML(p.grade)}
                 </select>
             </td>
             <td>
