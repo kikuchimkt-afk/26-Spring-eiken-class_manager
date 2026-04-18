@@ -32,8 +32,11 @@
                 <button class="btn" style="width: 100%; display: block; text-align: center; background-color: var(--input-bg); color: var(--text-main); cursor: pointer; font-size: 13px; border: 1px solid var(--border); margin-bottom: 10px;" onclick="downloadExcel()">
                     📊 Excel一括ダウンロード
                 </button>
-                <button class="btn primary-btn" style="width: 100%; display: block; text-align: center; background-color: var(--success); cursor: pointer; font-size: 13px; border: none;" onclick="syncWithCloud()">
+                <button class="btn primary-btn" style="width: 100%; display: block; text-align: center; background-color: var(--success); cursor: pointer; font-size: 13px; border: none; margin-bottom: 10px;" onclick="syncWithCloud()">
                     クラウドから最新読込
+                </button>
+                <button class="btn" style="width: 100%; display: block; text-align: center; background-color: #fff4e5; color: #8a5a00; cursor: pointer; font-size: 12px; border: 1px solid #ffc078;" onclick="migrateLegacyData()" title="旧端末で作られた重複IDデータを新形式 (p_form_*) に統合します。実行前に自動でJSONバックアップをダウンロードします。">
+                    🔧 旧データを新形式に統合
                 </button>
                 <small style="display: block; margin-top: 8px; color: var(--text-sec); font-size: 11px; text-align: center;">Googleフォームの回答と同期</small>
             </div>
