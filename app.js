@@ -45,6 +45,7 @@ const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbz2lwmv77SBY8kD
 let currentSessionId = null;
 let appData = {};
 let newParticipantIds = new Set(); // 未確認の新規参加者を追跡（localStorageに永続化）
+let hasRendered = false; // ★ 画面が一度でも描画されたかどうか（初回保存防止用）
 
 // 初期化
 function init() {
@@ -258,6 +259,8 @@ function processFormResponses(formResponses) {
 // ★ フォーム+iframe送信方式でCORSを完全回避
 async function saveData() {
     if (!currentSessionId) return;
+    // ★ まだ画面が描画されていない段階ではDOMから空データを取得してしまうため保存しない
+    if (!hasRendered) return;
 
     appData[currentSessionId].generalHomework = document.getElementById('generalHomework').value;
     appData[currentSessionId].generalNotes = document.getElementById('generalNotes').value;
@@ -300,46 +303,15 @@ async function saveData() {
     }
 }
 
-// フォーム＋隠しiframeでGASにPOST送信（CORS完全回避）
+// ★ fetch + no-cors方式でGASにPOST送信（文字化け完全回避）
 function saveToCloud(data) {
-    return new Promise((resolve) => {
-        // 既存のiframe/formがあれば削除
-        const oldIframe = document.getElementById('gas_save_frame');
-        if (oldIframe) oldIframe.remove();
-        const oldForm = document.getElementById('gas_save_form');
-        if (oldForm) oldForm.remove();
-        
-        // 隠しiframeを作成
-        const iframe = document.createElement('iframe');
-        iframe.id = 'gas_save_frame';
-        iframe.name = 'gas_save_frame';
-        iframe.style.display = 'none';
-        document.body.appendChild(iframe);
-        
-        // フォームを作成
-        const form = document.createElement('form');
-        form.id = 'gas_save_form';
-        form.method = 'POST';
-        form.action = GAS_WEB_APP_URL;
-        form.target = 'gas_save_frame'; // iframeに送信
-        form.acceptCharset = 'UTF-8'; // ★ 文字コードをUTF-8に明示
-        
-        // ★ 日本語データの文字化け防止: encodeURIComponentでエンコードして送信
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = 'data';
-        input.value = encodeURIComponent(JSON.stringify(data));
-        form.appendChild(input);
-        
-        document.body.appendChild(form);
-        form.submit();
-        
-        // 送信完了後にクリーンアップ
-        setTimeout(() => {
-            iframe.remove();
-            form.remove();
-            resolve();
-        }, 3000);
+    return fetch(GAS_WEB_APP_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+        body: JSON.stringify({ appData: data })
+    }).then(() => {
+        // no-corsではレスポンスを読めないが、送信は成功
     });
 }
 
@@ -608,6 +580,7 @@ function renderMainContent() {
     });
     
     document.getElementById('participantCount').textContent = `${renderedCount}名`;
+    hasRendered = true; // ★ 描画完了フラグ
 }
 
 // 欠席時の入力制限
