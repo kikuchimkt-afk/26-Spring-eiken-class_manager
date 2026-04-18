@@ -119,6 +119,78 @@ async function syncWithCloud() {
             processFormResponses(data.formResponses);
         }
         
+        // ★ 3. クラウドの旧ID(p_ext_)データを新ID(p_form_)にマイグレーション
+        if (data.appData && Object.keys(data.appData).length > 0) {
+            // 名前→新IDのマッピングを作成
+            const nameToNewId = {};
+            participantsList.forEach(p => { nameToNewId[p.name] = p.id; });
+            
+            // クラウドの旧IDから名前を逆引きするため、フォーム回答を使う
+            const oldIdToName = {};
+            if (data.formResponses) {
+                data.formResponses.forEach((row, i) => {
+                    const keys = Object.keys(row);
+                    const nameKey = keys.find(k => k.includes('氏名'));
+                    if (!nameKey) return;
+                    const rawName = String(row[nameKey] || '');
+                    if (!rawName.trim()) return;
+                    const name = rawName.replace(/[\s　]+/g, ' ');
+                    // 旧IDの生成ロジックを再現（これらすべてのパターンを試す）
+                    oldIdToName[`p_ext_${i}`] = name; // indexパターン
+                });
+            }
+            
+            Object.keys(data.appData).forEach(sessionId => {
+                const cloudParticipants = data.appData[sessionId]?.participants || {};
+                Object.keys(cloudParticipants).forEach(oldId => {
+                    if (!oldId.startsWith('p_ext_')) return;
+                    const pData = cloudParticipants[oldId];
+                    // このIDに成績データがあるか
+                    if (!pData.rpContent && !pData.apContent && !pData.rpScore && !pData.apScore && !pData.remarks) return;
+                    
+                    // 名前で照合：participantsListから旧IDを持つ参加者を探す
+                    // （クラウドのparticipantsListにも旧IDがあるかもしれない）
+                    let matchedName = null;
+                    
+                    // 方法1: 全participantsListを走査して名前マッチング
+                    for (const name in nameToNewId) {
+                        const newId = nameToNewId[name];
+                        if (newId === oldId) { matchedName = name; break; }
+                    }
+                    
+                    // 方法2: 旧IDの末尾のindexからフォーム行を特定
+                    if (!matchedName) {
+                        const match = oldId.match(/_(\d+)$/);
+                        if (match && data.formResponses) {
+                            const idx = parseInt(match[1]);
+                            if (idx < data.formResponses.length) {
+                                const row = data.formResponses[idx];
+                                const nameKey = Object.keys(row).find(k => k.includes('氏名'));
+                                if (nameKey) {
+                                    const rawName = String(row[nameKey] || '').replace(/[\s　]+/g, ' ');
+                                    if (rawName && nameToNewId[rawName]) {
+                                        matchedName = rawName;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (matchedName) {
+                        const newId = nameToNewId[matchedName];
+                        if (newId && newId !== oldId) {
+                            // 新IDにデータをマイグレーション（既存データがなければ）
+                            if (!appData[sessionId]) appData[sessionId] = { generalHomework: '', generalNotes: '', participants: {} };
+                            if (!appData[sessionId].participants[newId] || 
+                                (!appData[sessionId].participants[newId].rpContent && !appData[sessionId].participants[newId].apContent)) {
+                                appData[sessionId].participants[newId] = pData;
+                            }
+                        }
+                    }
+                });
+            });
+        }
+        
         // 新規参加者がいれば通知を表示し、localStorageに保存
         if (newParticipantIds.size > 0) {
             showNotification(`🆕 新しい申し込みが ${newParticipantIds.size} 件あります！`);
@@ -171,6 +243,18 @@ function hideLoading() {
     }
 }
 
+// ★ 名前からデバイス非依存の決定的IDを生成
+function generateParticipantId(name, index) {
+    let hash = 0;
+    const str = name + '_' + index;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+    }
+    return 'p_form_' + Math.abs(hash).toString(36);
+}
+
 function processFormResponses(formResponses) {
     formResponses.forEach((row, i) => {
         const keys = Object.keys(row);
@@ -207,7 +291,7 @@ function processFormResponses(formResponses) {
         let existing = participantsList.find(p => p.name === name);
         if (!existing) {
             existing = {
-                id: `p_ext_${Date.now()}_${i}`,
+                id: generateParticipantId(name, i),
                 name: name,
                 grade: grade,
                 hasTablet: hasTablet,
