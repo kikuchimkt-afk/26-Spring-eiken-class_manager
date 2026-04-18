@@ -29,6 +29,9 @@
             </ul>
             <button class="add-session-btn" onclick="showAddSessionModal()">＋ 日程を追加</button>
             <div class="sidebar-footer" style="padding: 20px; border-top: 1px solid var(--border); margin-top: auto;">
+                <button class="btn" style="width: 100%; display: block; text-align: center; background-color: var(--input-bg); color: var(--text-main); cursor: pointer; font-size: 13px; border: 1px solid var(--border); margin-bottom: 10px;" onclick="downloadExcel()">
+                    📊 Excel一括ダウンロード
+                </button>
                 <button class="btn primary-btn" style="width: 100%; display: block; text-align: center; background-color: var(--success); cursor: pointer; font-size: 13px; border: none;" onclick="syncWithCloud()">
                     クラウドから最新読込
                 </button>
@@ -68,10 +71,10 @@
                             <thead>
                                 <tr>
                                     <th width="60">出欠</th>
-                                    <th width="120">氏名</th>
-                                    <th width="70">学年</th>
-                                    <th width="80">受験級</th>
-                                    <th width="70">タブ</th>
+                                    <th width="120" onclick="sortTable('name')" style="cursor:pointer;">氏名 <span id="sort_name" class="sort-icon"></span></th>
+                                    <th width="70" onclick="sortTable('schoolYear')" style="cursor:pointer;">学年 <span id="sort_schoolYear" class="sort-icon"></span></th>
+                                    <th width="80" onclick="sortTable('grade')" style="cursor:pointer;">受験級 <span id="sort_grade" class="sort-icon"></span></th>
+                                    <th width="70" onclick="sortTable('hasTablet')" style="cursor:pointer;">タブ <span id="sort_hasTablet" class="sort-icon"></span></th>
                                     <th width="220" style="color:var(--accent);">ReadPass (年/回)</th>
                                     <th width="80">Rスコア</th>
                                     <th width="220" style="color:var(--danger);">AudiPass (年/回)</th>

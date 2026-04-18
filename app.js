@@ -46,6 +46,7 @@ let currentSessionId = null;
 let appData = {};
 let newParticipantIds = new Set(); // 未確認の新規参加者を追跡（localStorageに永続化）
 let hasRendered = false; // ★ 画面が一度でも描画されたかどうか（初回保存防止用）
+let currentSort = { key: null, asc: true }; // ★ ソート状態
 
 // 初期化
 function init() {
@@ -449,9 +450,16 @@ function renderSidebar() {
             li.className = 'active';
         }
 
+        // ★ 各日程の参加人数を計算
+        let count = 0;
+        if (appData[session.id] && appData[session.id].participants) {
+            count = Object.keys(appData[session.id].participants).length;
+        }
+
         li.innerHTML = `
-            <div>
+            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
                 <span class="date-title">${session.date}</span>
+                <span style="background: ${currentSessionId === session.id ? 'rgba(255,255,255,0.25)' : 'var(--input-bg)'}; color: ${currentSessionId === session.id ? '#fff' : 'var(--text-sec)'}; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; min-width: 28px; text-align: center;">${count}名</span>
             </div>
         `;
         list.appendChild(li);
@@ -615,9 +623,37 @@ function renderMainContent() {
     
     let renderedCount = 0;
 
-    participantsList.forEach(p => {
+    // ★ ソート済みリストを作成
+    const gradeOrder = {'1級':1, '準1級':2, '2級':3, '準2級プラス':4, '準2級':5, '3級':6, '4級':7, '5級':8};
+    let sortedList = participantsList.filter(p => data.participants[p.id]);
+    
+    if (currentSort.key) {
+        sortedList.sort((a, b) => {
+            let va, vb;
+            if (currentSort.key === 'grade') {
+                va = gradeOrder[a.grade] || 99;
+                vb = gradeOrder[b.grade] || 99;
+            } else if (currentSort.key === 'hasTablet') {
+                va = a.hasTablet ? 0 : 1;
+                vb = b.hasTablet ? 0 : 1;
+            } else {
+                va = (a[currentSort.key] || '').toString();
+                vb = (b[currentSort.key] || '').toString();
+            }
+            if (va < vb) return currentSort.asc ? -1 : 1;
+            if (va > vb) return currentSort.asc ? 1 : -1;
+            return 0;
+        });
+    }
+    
+    // ソートインジケータ更新
+    ['name', 'schoolYear', 'grade', 'hasTablet'].forEach(key => {
+        const el = document.getElementById('sort_' + key);
+        if (el) el.textContent = currentSort.key === key ? (currentSort.asc ? '▲' : '▼') : '';
+    });
+
+    sortedList.forEach(p => {
         const pData = data.participants[p.id];
-        if (!pData) return; // その日に割り当てられていない生徒は表示しない
         
         renderedCount++;
         const tr = document.createElement('tr');
@@ -826,6 +862,120 @@ function addSession() {
     
     closeAddSessionModal();
     renderSidebar();
+}
+
+// ====== テーブルソート ======
+function sortTable(key) {
+    if (currentSort.key === key) {
+        currentSort.asc = !currentSort.asc; // 同じキー → 方向切り替え
+    } else {
+        currentSort.key = key;
+        currentSort.asc = true;
+    }
+    renderMainContent();
+}
+
+// ====== Excelダウンロード ======
+function downloadExcel() {
+    if (!appData || Object.keys(appData).length === 0) {
+        alert('データがありません。');
+        return;
+    }
+    
+    const wb = XLSX.utils.book_new();
+    
+    // 全日程を1シートにまとめる「全体一覧」シート
+    const summaryRows = [];
+    summaryRows.push(['日程', '氏名', '学年', '受験級', 'タブレット', '出欠', 'ReadPass (年/回)', 'Rスコア', 'AudiPass (年/回)', 'Lスコア', '備考・個別宿題']);
+    
+    sessionsInfo.forEach(session => {
+        const sessionData = appData[session.id];
+        if (!sessionData || !sessionData.participants) return;
+        
+        Object.keys(sessionData.participants).forEach(pid => {
+            const pData = sessionData.participants[pid];
+            const p = participantsList.find(x => x.id === pid);
+            if (!p) return;
+            
+            summaryRows.push([
+                session.date,
+                p.name,
+                p.schoolYear || '',
+                p.grade || '',
+                p.hasTablet ? '持参' : 'なし',
+                pData.attended ? '出席' : '欠席',
+                pData.rpContent || '',
+                pData.rpScore || '',
+                pData.apContent || '',
+                pData.apScore || '',
+                pData.remarks || ''
+            ]);
+        });
+    });
+    
+    const summaryWs = XLSX.utils.aoa_to_sheet(summaryRows);
+    // 列幅を設定
+    summaryWs['!cols'] = [
+        { wch: 14 }, // 日程
+        { wch: 14 }, // 氏名
+        { wch: 8 },  // 学年
+        { wch: 10 }, // 受験級
+        { wch: 8 },  // タブ
+        { wch: 6 },  // 出欠
+        { wch: 22 }, // ReadPass
+        { wch: 8 },  // Rスコア
+        { wch: 22 }, // AudiPass
+        { wch: 8 },  // Lスコア
+        { wch: 24 }, // 備考
+    ];
+    XLSX.utils.book_append_sheet(wb, summaryWs, '全体一覧');
+    
+    // 各日程ごとのシートを作成
+    sessionsInfo.forEach(session => {
+        const sessionData = appData[session.id];
+        if (!sessionData || !sessionData.participants) return;
+        
+        const rows = [];
+        rows.push(['氏名', '学年', '受験級', 'タブレット', '出欠', 'ReadPass (年/回)', 'Rスコア', 'AudiPass (年/回)', 'Lスコア', '備考・個別宿題']);
+        
+        Object.keys(sessionData.participants).forEach(pid => {
+            const pData = sessionData.participants[pid];
+            const p = participantsList.find(x => x.id === pid);
+            if (!p) return;
+            
+            rows.push([
+                p.name,
+                p.schoolYear || '',
+                p.grade || '',
+                p.hasTablet ? '持参' : 'なし',
+                pData.attended ? '出席' : '欠席',
+                pData.rpContent || '',
+                pData.rpScore || '',
+                pData.apContent || '',
+                pData.apScore || '',
+                pData.remarks || ''
+            ]);
+        });
+        
+        // 全体宿題・メモ
+        rows.push([]);
+        rows.push(['全体宿題', sessionData.generalHomework || '']);
+        rows.push(['日誌・引継ぎ', sessionData.generalNotes || '']);
+        
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        ws['!cols'] = [
+            { wch: 14 }, { wch: 8 }, { wch: 10 }, { wch: 8 }, { wch: 6 },
+            { wch: 22 }, { wch: 8 }, { wch: 22 }, { wch: 8 }, { wch: 24 }
+        ];
+        // シート名は31文字制限 & 不正文字除去
+        const sheetName = session.date.replace(/[\[\]\*\?\/\\]/g, '').substring(0, 31);
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    });
+    
+    // ダウンロード
+    const today = new Date();
+    const fileName = `英検勉強会_日誌_${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}.xlsx`;
+    XLSX.writeFile(wb, fileName);
 }
 
 // 起動
