@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>英検勉強会 日誌管理</title>
-    <link rel="stylesheet" href="style.css?v=13">
+    <link rel="stylesheet" href="style.css?v=14">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <meta name="apple-mobile-web-app-capable" content="yes">
 </head>
@@ -98,11 +98,11 @@
                     <div class="form-grid">
                         <div class="form-group">
                             <label for="generalHomework">全体共通の宿題</label>
-                            <textarea id="generalHomework" rows="3" placeholder="全体に出した宿題があれば記入してください..."></textarea>
+                            <textarea id="generalHomework" rows="3" oninput="scheduleAutosave()" placeholder="全体に出した宿題があれば記入してください..."></textarea>
                         </div>
                         <div class="form-group">
                             <label for="generalNotes">日誌・引継ぎ事項</label>
-                            <textarea id="generalNotes" rows="3" placeholder="クラス全体の様子、次回の担当者への引継ぎ事項等..."></textarea>
+                            <textarea id="generalNotes" rows="3" oninput="scheduleAutosave()" placeholder="クラス全体の様子、次回の担当者への引継ぎ事項等..."></textarea>
                         </div>
                     </div>
                 </section>
@@ -163,6 +163,6 @@
 
     <!-- Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="app.js?v=13"></script>
+    <script src="app.js?v=14"></script>
 </body>
 </html>

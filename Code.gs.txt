@@ -2,16 +2,103 @@
 const FORM_SHEET_NAME = "フォームの回答 1";
 const STORAGE_SHEET_NAME = "アプリ保存用";
 
+// ★ セル1つ(50,000文字上限)を超えても安全に保存するため、
+//   Column A を縦にチャンク分割して JSON 文字列を保存する。
+//   A1 に「# of chunks」、A2..A(N+1) にチャンク本体を格納する。
+const CHUNK_SIZE = 40000;
+
 // 1. はじめに1回だけ「実行」して保存用シートを作成します
 function setup() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss.getSheetByName(STORAGE_SHEET_NAME)) {
     const sheet = ss.insertSheet(STORAGE_SHEET_NAME);
-    sheet.getRange('A1').setValue('{}');
+    sheet.getRange('A1').setValue('0'); // 0 chunks = empty
   }
 }
 
-// 2. データの取得（GETリクエスト）
+// ====== ストレージヘルパ ======
+
+// 保存されている JSON 文字列を取得（旧 A1 単一セル方式も自動で読む）
+function readStorageString_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(STORAGE_SHEET_NAME);
+  if (!sheet) return "{}";
+
+  const a1 = sheet.getRange('A1').getValue();
+  const a1Str = (a1 === null || a1 === undefined) ? "" : String(a1);
+
+  // 新フォーマット: A1 は整数(チャンク数)
+  if (/^\d+$/.test(a1Str)) {
+    const chunkCount = parseInt(a1Str, 10);
+    if (chunkCount <= 0) return "{}";
+    const range = sheet.getRange(2, 1, chunkCount, 1).getValues();
+    let combined = "";
+    for (let i = 0; i < chunkCount; i++) {
+      combined += String(range[i][0] || "");
+    }
+    return combined || "{}";
+  }
+
+  // 旧フォーマット: A1 に JSON 文字列が直接入っている
+  return a1Str || "{}";
+}
+
+// JSON 文字列をチャンク保存
+function writeStorageString_(jsonStr) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(STORAGE_SHEET_NAME);
+  if (!sheet) throw new Error("保存用シートが見つかりません。setup() を実行してください。");
+
+  // チャンクに分割
+  const chunks = [];
+  for (let i = 0; i < jsonStr.length; i += CHUNK_SIZE) {
+    chunks.push(jsonStr.substring(i, i + CHUNK_SIZE));
+  }
+
+  // 既存データをクリア（Column A をすべて消す）
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 0) {
+    sheet.getRange(1, 1, lastRow, 1).clearContent();
+  }
+
+  // A1 にチャンク数、A2.. にチャンク本体
+  sheet.getRange(1, 1).setValue(String(chunks.length));
+  if (chunks.length > 0) {
+    const values = chunks.map(c => [c]);
+    sheet.getRange(2, 1, chunks.length, 1).setValues(values);
+  }
+}
+
+// 現在保存されている wrapped オブジェクトを取得（後方互換）
+function readWrapped_() {
+  const str = readStorageString_();
+  let parsed;
+  try { parsed = JSON.parse(str); } catch (e) { parsed = {}; }
+
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    // 新フォーマット（wrapper keys）検出
+    const hasWrapper = ('appData' in parsed) || ('sessionsInfo' in parsed) || ('participantsList' in parsed);
+    if (hasWrapper) {
+      return {
+        appData: parsed.appData || {},
+        sessionsInfo: parsed.sessionsInfo || null,
+        participantsList: parsed.participantsList || null,
+        updatedAt: parsed.updatedAt || 0
+      };
+    }
+    // 旧フォーマット: オブジェクトが appData 本体
+    return {
+      appData: parsed,
+      sessionsInfo: null,
+      participantsList: null,
+      updatedAt: 0
+    };
+  }
+
+  return { appData: {}, sessionsInfo: null, participantsList: null, updatedAt: 0 };
+}
+
+// ====== 2. データの取得（GETリクエスト）======
 function doGet(e) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -20,64 +107,99 @@ function doGet(e) {
   let formResponses = [];
   if (formSheet) {
     const data = formSheet.getDataRange().getValues();
-    const headers = data[0];
-    for (let i = 1; i < data.length; i++) {
-      let row = {};
-      headers.forEach((h, colIdx) => {
-        row[String(h).trim()] = data[i][colIdx];
-      });
-      formResponses.push(row);
+    if (data.length > 1) {
+      const headers = data[0];
+      for (let i = 1; i < data.length; i++) {
+        let row = {};
+        headers.forEach((h, colIdx) => {
+          row[String(h).trim()] = data[i][colIdx];
+        });
+        formResponses.push(row);
+      }
     }
   }
 
-  // 保存済みデータの取得
-  const storageSheet = ss.getSheetByName(STORAGE_SHEET_NAME);
-  let appDataStr = "{}";
-  if (storageSheet) {
-    appDataStr = storageSheet.getRange('A1').getValue() || "{}";
-  }
+  const wrapped = readWrapped_();
 
   const response = {
     formResponses: formResponses,
-    appData: JSON.parse(appDataStr)
+    appData: wrapped.appData,
+    sessionsInfo: wrapped.sessionsInfo,
+    participantsList: wrapped.participantsList,
+    updatedAt: wrapped.updatedAt
   };
 
   return ContentService.createTextOutput(JSON.stringify(response))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// 3. データの保存（POSTリクエスト - HTMLフォーム送信対応）
+// ====== 3. データの保存（POSTリクエスト）======
+// 複数端末の衝突を軽減するため ScriptLock を使用する
 function doPost(e) {
+  const lock = LockService.getScriptLock();
   try {
-    let appDataStr = '{}';
-    
-    // ★ Base64送信（文字化け完全回避）の場合
+    lock.waitLock(20000); // 最大20秒待機
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({
+      status: "error",
+      message: "他の端末が保存中です。少し待って再試行してください。"
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  try {
+    let incomingStr = '{}';
+
+    // Base64送信（文字化け完全回避）
     if (e.parameter && e.parameter.data_b64) {
-      var decoded = Utilities.base64Decode(e.parameter.data_b64);
-      appDataStr = Utilities.newBlob(decoded).getDataAsString('UTF-8');
+      const decoded = Utilities.base64Decode(e.parameter.data_b64);
+      incomingStr = Utilities.newBlob(decoded).getDataAsString('UTF-8');
     }
-    // フォーム送信（application/x-www-form-urlencoded）の場合（フォールバック）
+    // application/x-www-form-urlencoded（フォールバック）
     else if (e.parameter && e.parameter.data) {
-      appDataStr = e.parameter.data;
+      incomingStr = e.parameter.data;
     }
-    // JSON送信（text/plain）の場合
+    // text/plain JSON（fetch から）
     else if (e.postData && e.postData.contents) {
-      const payload = JSON.parse(e.postData.contents);
-      appDataStr = JSON.stringify(payload.appData);
+      incomingStr = e.postData.contents;
     }
-    
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const storageSheet = ss.getSheetByName(STORAGE_SHEET_NAME);
-    
-    if (storageSheet) {
-      storageSheet.getRange('A1').setValue(appDataStr);
-      return ContentService.createTextOutput(JSON.stringify({ status: "success" }))
-        .setMimeType(ContentService.MimeType.JSON);
+
+    let incoming;
+    try { incoming = JSON.parse(incomingStr); }
+    catch (err) { throw new Error('受信データのパースに失敗しました。'); }
+
+    // 入力形状の判定
+    //  - 新クライアント: { appData, sessionsInfo, participantsList, updatedAt }
+    //  - 旧クライアント: appData 直接
+    let incomingWrapped;
+    if (incoming && typeof incoming === 'object' &&
+        (('appData' in incoming) || ('sessionsInfo' in incoming) || ('participantsList' in incoming))) {
+      incomingWrapped = incoming;
     } else {
-      throw new Error("保存用シートが見つかりません。");
+      incomingWrapped = { appData: incoming };
     }
+
+    // 既存データを読んで、欠落フィールドは温存（部分更新を許容）
+    const current = readWrapped_();
+
+    const merged = {
+      appData:          (incomingWrapped.appData          !== undefined && incomingWrapped.appData          !== null) ? incomingWrapped.appData          : (current.appData          || {}),
+      sessionsInfo:     (incomingWrapped.sessionsInfo     !== undefined && incomingWrapped.sessionsInfo     !== null) ? incomingWrapped.sessionsInfo     : (current.sessionsInfo     || null),
+      participantsList: (incomingWrapped.participantsList !== undefined && incomingWrapped.participantsList !== null) ? incomingWrapped.participantsList : (current.participantsList || null),
+      updatedAt:        incomingWrapped.updatedAt || Date.now()
+    };
+
+    writeStorageString_(JSON.stringify(merged));
+
+    return ContentService.createTextOutput(JSON.stringify({
+      status: "success",
+      updatedAt: merged.updatedAt
+    })).setMimeType(ContentService.MimeType.JSON);
   } catch (error) {
-    return ContentService.createTextOutput(JSON.stringify({ status: "error", message: error.message }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({
+      status: "error",
+      message: String(error && error.message ? error.message : error)
+    })).setMimeType(ContentService.MimeType.JSON);
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
   }
 }

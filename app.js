@@ -47,6 +47,8 @@ let appData = {};
 let newParticipantIds = new Set(); // 未確認の新規参加者を追跡（localStorageに永続化）
 let hasRendered = false; // ★ 画面が一度でも描画されたかどうか（初回保存防止用）
 let currentSort = { key: null, asc: true }; // ★ ソート状態
+let cloudSynced = false; // ★ 一度でもクラウドと同期できたか（未同期なら空上書き保護）
+let autosaveTimer = null; // ★ フィールド変更時のデバウンス保存用
 
 // 初期化
 function init() {
@@ -94,33 +96,68 @@ async function loadData() {
 async function syncWithCloud() {
     showLoading("クラウドから最新のデータを同期中...");
     try {
-        const response = await fetch(GAS_WEB_APP_URL);
+        // キャッシュ無効化のためタイムスタンプを付与
+        const response = await fetch(GAS_WEB_APP_URL + '?t=' + Date.now());
         const data = await response.json();
-        
-        // ★ 1. まずクラウドの成績データを先にマージ（空でないもののみ）
-        if (data.appData && Object.keys(data.appData).length > 0) {
-            Object.keys(data.appData).forEach(sessionId => {
-                if (appData[sessionId]) {
-                    const cloudSession = data.appData[sessionId];
-                    // 参加者データがある場合のみ上書き
-                    if (cloudSession.participants && Object.keys(cloudSession.participants).length > 0) {
-                        appData[sessionId] = cloudSession;
-                    } else {
-                        // 参加者以外のフィールド（宿題・メモ）だけ反映
-                        appData[sessionId].generalHomework = cloudSession.generalHomework || appData[sessionId].generalHomework;
-                        appData[sessionId].generalNotes = cloudSession.generalNotes || appData[sessionId].generalNotes;
-                    }
+
+        const cloudAppData = data.appData || {};
+        const cloudSessionsInfo = data.sessionsInfo;
+        const cloudParticipantsList = data.participantsList;
+
+        // ★ 1. sessionsInfo をマージ（id 基準、クラウド優先）
+        if (Array.isArray(cloudSessionsInfo) && cloudSessionsInfo.length > 0) {
+            const byId = {};
+            sessionsInfo.forEach(s => { byId[s.id] = s; });
+            cloudSessionsInfo.forEach(s => { byId[s.id] = s; });
+            sessionsInfo = Object.values(byId);
+        }
+
+        // ★ 2. participantsList をマージ（id 基準、クラウド優先）
+        if (Array.isArray(cloudParticipantsList) && cloudParticipantsList.length > 0) {
+            const byId = {};
+            participantsList.forEach(p => { byId[p.id] = p; });
+            cloudParticipantsList.forEach(p => { byId[p.id] = p; });
+            participantsList = Object.values(byId);
+        }
+
+        // ★ 3. すべての既知セッションに対して appData の器を用意
+        sessionsInfo.forEach(s => {
+            if (!appData[s.id]) {
+                appData[s.id] = { generalHomework: '', generalNotes: '', participants: {} };
+            }
+        });
+
+        // ★ 4. appData をマージ（セッションが未知でも取り込む／参加者は id 単位で上書き）
+        if (cloudAppData && typeof cloudAppData === 'object') {
+            Object.keys(cloudAppData).forEach(sessionId => {
+                if (!appData[sessionId]) {
+                    appData[sessionId] = { generalHomework: '', generalNotes: '', participants: {} };
+                }
+                const cloudSession = cloudAppData[sessionId] || {};
+                // 宿題・メモはクラウドの値をそのまま反映（空文字も含む）
+                if (typeof cloudSession.generalHomework === 'string') {
+                    appData[sessionId].generalHomework = cloudSession.generalHomework;
+                }
+                if (typeof cloudSession.generalNotes === 'string') {
+                    appData[sessionId].generalNotes = cloudSession.generalNotes;
+                }
+                // 参加者は id 単位でクラウド優先マージ（成績・pulldown・備考が確実に届く）
+                if (cloudSession.participants && typeof cloudSession.participants === 'object') {
+                    if (!appData[sessionId].participants) appData[sessionId].participants = {};
+                    Object.keys(cloudSession.participants).forEach(pid => {
+                        appData[sessionId].participants[pid] = cloudSession.participants[pid];
+                    });
                 }
             });
         }
-        
-        // ★ 2. その後にフォーム回答を処理（新規参加者を追加）
+
+        // ★ 5. その後にフォーム回答を処理（新規参加者を追加）
         newParticipantIds = new Set();
         if (data.formResponses && data.formResponses.length > 0) {
             processFormResponses(data.formResponses);
         }
-        
-        // ★ 3. クラウドの旧ID(p_ext_)データを新ID(p_form_)にマイグレーション
+
+        // ★ 6. クラウドの旧ID(p_ext_)データを新ID(p_form_)にマイグレーション
         if (data.appData && Object.keys(data.appData).length > 0) {
             // 名前→新IDのマッピングを作成
             const nameToNewId = {};
@@ -197,10 +234,10 @@ async function syncWithCloud() {
             showNotification(`🆕 新しい申し込みが ${newParticipantIds.size} 件あります！`);
             localStorage.setItem('eikenNewParticipantIds', JSON.stringify([...newParticipantIds]));
         }
-        
-        localStorage.setItem('eikenClassManagerData', JSON.stringify(appData));
-        localStorage.setItem('eikenClassManagerParticipants', JSON.stringify(participantsList));
-        
+
+        persistLocal();
+        cloudSynced = true; // ★ 正常取得できたので以降の push を許可
+
         if (!currentSessionId && sessionsInfo.length > 0) {
             currentSessionId = sessionsInfo[0].id;
         }
@@ -211,7 +248,7 @@ async function syncWithCloud() {
         }
     } catch(e) {
         console.error("クラウド同期エラー:", e);
-        // エラーでも起動は続行（オフラインモード）
+        // エラーでも起動は続行（オフラインモード）。cloudSynced は false のまま。
     } finally {
         hideLoading();
     }
@@ -324,7 +361,12 @@ function processFormResponses(formResponses) {
                     }
                 } else if (!wantsToAttend && appData[sessionId].participants[existing.id]) {
                     const pData = appData[sessionId].participants[existing.id];
-                    if (!pData.rpScore && !pData.apScore && !pData.remarks) {
+                    // ★ rpContent / apContent も判定に含め、プルダウン入力の消失を防ぐ
+                    const isEmpty =
+                        !pData.rpScore && !pData.apScore &&
+                        !pData.rpContent && !pData.apContent &&
+                        !pData.remarks;
+                    if (isEmpty) {
                         delete appData[sessionId].participants[existing.id];
                     }
                 }
@@ -340,98 +382,174 @@ function processFormResponses(formResponses) {
     });
 }
 
+// ★ 現在の DOM の内容を appData に反映する（保存前の同期処理）
+function syncDomToAppData() {
+    if (!currentSessionId || !hasRendered) return;
+    if (!appData[currentSessionId]) return;
+
+    const hwElem = document.getElementById('generalHomework');
+    const notesElem = document.getElementById('generalNotes');
+    if (hwElem) appData[currentSessionId].generalHomework = hwElem.value;
+    if (notesElem) appData[currentSessionId].generalNotes = notesElem.value;
+
+    if (appData[currentSessionId].participants) {
+        Object.keys(appData[currentSessionId].participants).forEach(id => {
+            const attendElem = document.getElementById(`attend_${id}`);
+            if (!attendElem) return; // DOMに無い参加者はそのまま温存
+            const rpContentEl = document.getElementById(`rpContent_${id}`);
+            const rpScoreEl = document.getElementById(`rpScore_${id}`);
+            const apContentEl = document.getElementById(`apContent_${id}`);
+            const apScoreEl = document.getElementById(`apScore_${id}`);
+            const remarksEl = document.getElementById(`remarks_${id}`);
+            appData[currentSessionId].participants[id] = {
+                attended: attendElem.checked,
+                rpContent: rpContentEl ? rpContentEl.value : '',
+                rpScore:   rpScoreEl   ? rpScoreEl.value   : '',
+                apContent: apContentEl ? apContentEl.value : '',
+                apScore:   apScoreEl   ? apScoreEl.value   : '',
+                remarks:   remarksEl   ? remarksEl.value   : ''
+            };
+        });
+    }
+}
+
+// ★ 現在の全アプリ状態を localStorage に保存
+function persistLocal() {
+    localStorage.setItem('eikenClassManagerData', JSON.stringify(appData));
+    localStorage.setItem('eikenClassManagerParticipants', JSON.stringify(participantsList));
+    localStorage.setItem('eikenClassManagerSessions', JSON.stringify(sessionsInfo));
+}
+
+// ★ ユーザー操作のたびに呼ぶデバウンス自動保存（1.2秒後にクラウドへ）
+function scheduleAutosave() {
+    clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(() => { saveData(); }, 1200);
+}
+
 // データの保存（クラウド＆ローカル保存）
-// ★ フォーム+iframe送信方式でCORSを完全回避
 async function saveData() {
     if (!currentSessionId) return;
     // ★ まだ画面が描画されていない段階ではDOMから空データを取得してしまうため保存しない
     if (!hasRendered) return;
 
-    appData[currentSessionId].generalHomework = document.getElementById('generalHomework').value;
-    appData[currentSessionId].generalNotes = document.getElementById('generalNotes').value;
+    syncDomToAppData();
+    persistLocal();
 
-    if (appData[currentSessionId] && appData[currentSessionId].participants) {
-        Object.keys(appData[currentSessionId].participants).forEach(id => {
-            const attendElem = document.getElementById(`attend_${id}`);
-            if (attendElem) {
-                const attended = attendElem.checked;
-                const rpContent = document.getElementById(`rpContent_${id}`).value;
-                const rpScore = document.getElementById(`rpScore_${id}`).value;
-                const apContent = document.getElementById(`apContent_${id}`).value;
-                const apScore = document.getElementById(`apScore_${id}`).value;
-                const remarks = document.getElementById(`remarks_${id}`).value;
-
-                appData[currentSessionId].participants[id] = {
-                    attended, rpContent, rpScore, apContent, apScore, remarks
-                };
-            }
-        });
+    // ★ クラウド未同期のまま空の状態で上書きするのを防ぐ
+    if (!cloudSynced) {
+        console.warn('クラウド未同期のためクラウド保存はスキップ（ローカルのみ保存）');
+        return;
     }
 
-    // オフライン動作用の一時保存
-    localStorage.setItem('eikenClassManagerData', JSON.stringify(appData));
-    localStorage.setItem('eikenClassManagerParticipants', JSON.stringify(participantsList));
-    
-    // 保存メッセージの表示
     const status = document.getElementById('saveStatus');
-    status.textContent = 'クラウドへ保存中...';
-    status.classList.add('show');
-    
+    if (status) {
+        status.textContent = 'クラウドへ保存中...';
+        status.classList.add('show');
+    }
+
     try {
-        await saveToCloud(appData);
-        status.textContent = 'クラウドへ保存完了 ✓';
-        setTimeout(() => { status.classList.remove('show'); }, 3000);
+        const payload = {
+            appData,
+            sessionsInfo,
+            participantsList,
+            updatedAt: Date.now()
+        };
+        await saveToCloud(payload);
+        if (status) {
+            status.textContent = 'クラウドへ保存完了 ✓';
+            setTimeout(() => { status.classList.remove('show'); }, 3000);
+        }
     } catch (e) {
         console.error("クラウド保存エラー:", e);
-        status.textContent = '※オフライン保存のみ完了';
-        setTimeout(() => { status.classList.remove('show'); }, 3000);
+        if (status) {
+            status.textContent = '※クラウド保存失敗（オフラインのみ）';
+            setTimeout(() => { status.classList.remove('show'); }, 4000);
+        }
     }
 }
 
-// フォーム＋隠しiframeでGASにPOST送信（CORS完全回避）
-function saveToCloud(data) {
+// ★ 現在の app 状態を（DOM非依存で）クラウドに push するヘルパ
+//   addSession / addParticipant / delete 等から呼ぶ
+async function pushStateToCloud() {
+    persistLocal();
+    if (!cloudSynced) return; // 未同期なら push しない（上書き事故防止）
+    try {
+        await saveToCloud({
+            appData,
+            sessionsInfo,
+            participantsList,
+            updatedAt: Date.now()
+        });
+    } catch (e) {
+        console.warn('クラウド保存失敗（ローカルのみ）:', e);
+    }
+}
+
+// GAS へ POST 送信（fetch を優先し、失敗したら iframe フォールバック）
+async function saveToCloud(payload) {
+    const jsonStr = JSON.stringify(payload);
+    const utf8Bytes = new TextEncoder().encode(jsonStr);
+    let binaryStr = '';
+    utf8Bytes.forEach(b => binaryStr += String.fromCharCode(b));
+    const base64Data = btoa(binaryStr);
+
+    // ★ 優先: fetch + application/x-www-form-urlencoded（simple request / preflight 無し）
+    //   成功すればレスポンスで確実に success を確認できる
+    try {
+        const body = new URLSearchParams();
+        body.append('data_b64', base64Data);
+        const res = await fetch(GAS_WEB_APP_URL, {
+            method: 'POST',
+            body: body,
+            redirect: 'follow'
+        });
+        const text = await res.text();
+        let json;
+        try { json = JSON.parse(text); } catch (e) { json = null; }
+        if (json && json.status === 'success') return json;
+        // サーバー側がエラーを返した場合はそのまま投げる
+        if (json && json.status === 'error') throw new Error(json.message || 'GAS error');
+        // パースできない場合は iframe にフォールバック
+        throw new Error('Unexpected response');
+    } catch (fetchErr) {
+        console.warn('fetch 経由の保存に失敗、iframe フォールバックを試みます:', fetchErr);
+        return await saveViaIframe_(base64Data);
+    }
+}
+
+// iframe + form 送信（CORS 問題の最終フォールバック）
+function saveViaIframe_(base64Data) {
     return new Promise((resolve) => {
-        // 既存のiframe/formがあれば削除
         const oldIframe = document.getElementById('gas_save_frame');
         if (oldIframe) oldIframe.remove();
         const oldForm = document.getElementById('gas_save_form');
         if (oldForm) oldForm.remove();
-        
-        // 隠しiframeを作成
+
         const iframe = document.createElement('iframe');
         iframe.id = 'gas_save_frame';
         iframe.name = 'gas_save_frame';
         iframe.style.display = 'none';
         document.body.appendChild(iframe);
-        
-        // フォームを作成
+
         const form = document.createElement('form');
         form.id = 'gas_save_form';
         form.method = 'POST';
         form.action = GAS_WEB_APP_URL;
         form.target = 'gas_save_frame';
-        
-        // ★ Base64エンコードで日本語の文字化けを完全回避
-        const jsonStr = JSON.stringify(data);
-        const utf8Bytes = new TextEncoder().encode(jsonStr);
-        let binaryStr = '';
-        utf8Bytes.forEach(b => binaryStr += String.fromCharCode(b));
-        const base64Data = btoa(binaryStr);
-        
+
         const input = document.createElement('input');
         input.type = 'hidden';
         input.name = 'data_b64';
         input.value = base64Data;
         form.appendChild(input);
-        
+
         document.body.appendChild(form);
         form.submit();
-        
-        // 送信完了後にクリーンアップ
+
         setTimeout(() => {
             iframe.remove();
             form.remove();
-            resolve();
+            resolve({ status: 'success', via: 'iframe' });
         }, 3000);
     });
 }
@@ -468,7 +586,9 @@ function renderSidebar() {
 
 // セッション（日程）の選択
 async function selectSession(sessionId) {
-    await saveData(); // 今の画面を保存してから遷移
+    // 保留中の autosave を取り消し、今の画面を確実に保存してから遷移
+    clearTimeout(autosaveTimer);
+    await saveData();
     currentSessionId = sessionId;
     
     const sessionInfo = sessionsInfo.find(s => s.id === sessionId);
@@ -498,10 +618,12 @@ function updateParticipantInfo(id, field, value) {
             p[field] = value;
         }
         localStorage.setItem('eikenClassManagerParticipants', JSON.stringify(participantsList));
-        
+
+        // ★ 他端末に参加者メタ情報を伝えるため、デバウンス自動保存で push
+        scheduleAutosave();
+
         // 受験級が変更された場合はプルダウンを再描画する
         if (field === 'grade') {
-            saveData();
             renderMainContent();
         }
     }
@@ -540,7 +662,10 @@ function addParticipant() {
     
     localStorage.setItem('eikenClassManagerParticipants', JSON.stringify(participantsList));
     localStorage.setItem('eikenClassManagerData', JSON.stringify(appData));
-    
+
+    // ★ 新規参加者を他端末に即反映
+    pushStateToCloud();
+
     renderMainContent();
     
     // 追加した参加者の名前入力欄にフォーカスを当てる（少し遅延させる）
@@ -582,8 +707,8 @@ function deleteFromCurrentSession() {
     if (appData[currentSessionId] && appData[currentSessionId].participants[id]) {
         delete appData[currentSessionId].participants[id];
     }
-    
-    localStorage.setItem('eikenClassManagerData', JSON.stringify(appData));
+
+    pushStateToCloud();
     closeDeleteModal();
     renderMainContent();
 }
@@ -602,9 +727,8 @@ function deleteFromAllSessions() {
             delete appData[sessionId].participants[id];
         }
     });
-    
-    localStorage.setItem('eikenClassManagerParticipants', JSON.stringify(participantsList));
-    localStorage.setItem('eikenClassManagerData', JSON.stringify(appData));
+
+    pushStateToCloud();
     closeDeleteModal();
     renderMainContent();
 }
@@ -685,12 +809,12 @@ function renderMainContent() {
                 </select>
             </td>
             <td>
-                <select id="rpContent_${p.id}" ${!pData.attended ? 'disabled' : ''} style="width: 210px; font-size: 13px; padding: 4px; border: 1px solid var(--border-color); border-radius: 4px;">
+                <select id="rpContent_${p.id}" onchange="scheduleAutosave()" ${!pData.attended ? 'disabled' : ''} style="width: 210px; font-size: 13px; padding: 4px; border: 1px solid var(--border-color); border-radius: 4px;">
                     ${getPastPaperOptions(p.grade)}
                 </select>
             </td>
             <td>
-                <select id="rpScore_${p.id}" ${!pData.attended ? 'disabled' : ''} style="width: 60px; padding: 4px; border: 1px solid var(--border-color); border-radius: 4px; text-align: center;">
+                <select id="rpScore_${p.id}" onchange="scheduleAutosave()" ${!pData.attended ? 'disabled' : ''} style="width: 60px; padding: 4px; border: 1px solid var(--border-color); border-radius: 4px; text-align: center;">
                     <option value="" ${!pData.rpScore ? 'selected' : ''}>-</option>
                     <option value="5" ${pData.rpScore === '5' ? 'selected' : ''}>5</option>
                     <option value="4" ${pData.rpScore === '4' ? 'selected' : ''}>4</option>
@@ -700,12 +824,12 @@ function renderMainContent() {
                 </select>
             </td>
             <td>
-                <select id="apContent_${p.id}" ${!pData.attended ? 'disabled' : ''} style="width: 210px; font-size: 13px; padding: 4px; border: 1px solid var(--border-color); border-radius: 4px;">
+                <select id="apContent_${p.id}" onchange="scheduleAutosave()" ${!pData.attended ? 'disabled' : ''} style="width: 210px; font-size: 13px; padding: 4px; border: 1px solid var(--border-color); border-radius: 4px;">
                     ${getPastPaperOptions(p.grade)}
                 </select>
             </td>
             <td>
-                <select id="apScore_${p.id}" ${!pData.attended ? 'disabled' : ''} style="width: 60px; padding: 4px; border: 1px solid var(--border-color); border-radius: 4px; text-align: center;">
+                <select id="apScore_${p.id}" onchange="scheduleAutosave()" ${!pData.attended ? 'disabled' : ''} style="width: 60px; padding: 4px; border: 1px solid var(--border-color); border-radius: 4px; text-align: center;">
                     <option value="" ${!pData.apScore ? 'selected' : ''}>-</option>
                     <option value="5" ${pData.apScore === '5' ? 'selected' : ''}>5</option>
                     <option value="4" ${pData.apScore === '4' ? 'selected' : ''}>4</option>
@@ -715,7 +839,7 @@ function renderMainContent() {
                 </select>
             </td>
             <td>
-                <input type="text" id="remarks_${p.id}" value="${pData.remarks || ''}" placeholder="特記事項・個別宿題" ${!pData.attended ? 'disabled' : ''}>
+                <input type="text" id="remarks_${p.id}" oninput="scheduleAutosave()" onchange="scheduleAutosave()" value="${pData.remarks || ''}" placeholder="特記事項・個別宿題" ${!pData.attended ? 'disabled' : ''}>
             </td>
             <td>
                 <button type="button" onclick="deleteParticipant('${p.id}')" style="background: none; border: none; font-size: 20px; cursor: pointer; opacity: 0.7; padding: 8px;" title="この参加者を削除">🗑️</button>
@@ -756,6 +880,9 @@ function toggleAttendance(id) {
     document.getElementById(`apContent_${id}`).disabled = !isChecked;
     document.getElementById(`apScore_${id}`).disabled = !isChecked;
     document.getElementById(`remarks_${id}`).disabled = !isChecked;
+
+    // ★ 出欠変更も自動保存対象
+    scheduleAutosave();
 }
 // ====== 通知バナー ======
 function showNotification(message) {
@@ -855,11 +982,10 @@ function addSession() {
     
     sessionsInfo.push(newSession);
     appData[newId] = { generalHomework: '', generalNotes: '', participants: {} };
-    
-    // 保存
-    localStorage.setItem('eikenClassManagerSessions', JSON.stringify(sessionsInfo));
-    localStorage.setItem('eikenClassManagerData', JSON.stringify(appData));
-    
+
+    // ★ 新規日程を他端末にも即反映
+    pushStateToCloud();
+
     closeAddSessionModal();
     renderSidebar();
 }
