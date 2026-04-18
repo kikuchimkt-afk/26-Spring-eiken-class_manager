@@ -322,12 +322,13 @@ function saveToCloud(data) {
         form.method = 'POST';
         form.action = GAS_WEB_APP_URL;
         form.target = 'gas_save_frame'; // iframeに送信
+        form.acceptCharset = 'UTF-8'; // ★ 文字コードをUTF-8に明示
         
-        // データをhiddenフィールドとして追加
+        // ★ 日本語データの文字化け防止: encodeURIComponentでエンコードして送信
         const input = document.createElement('input');
         input.type = 'hidden';
         input.name = 'data';
-        input.value = JSON.stringify(data);
+        input.value = encodeURIComponent(JSON.stringify(data));
         form.appendChild(input);
         
         document.body.appendChild(form);
