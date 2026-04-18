@@ -324,14 +324,19 @@ function saveToCloud(data) {
         form.id = 'gas_save_form';
         form.method = 'POST';
         form.action = GAS_WEB_APP_URL;
-        form.target = 'gas_save_frame'; // iframeに送信
-        form.acceptCharset = 'UTF-8'; // ★ 文字コードをUTF-8に明示（文字化け防止）
+        form.target = 'gas_save_frame';
         
-        // データをhiddenフィールドとして追加
+        // ★ Base64エンコードで日本語の文字化けを完全回避
+        const jsonStr = JSON.stringify(data);
+        const utf8Bytes = new TextEncoder().encode(jsonStr);
+        let binaryStr = '';
+        utf8Bytes.forEach(b => binaryStr += String.fromCharCode(b));
+        const base64Data = btoa(binaryStr);
+        
         const input = document.createElement('input');
         input.type = 'hidden';
-        input.name = 'data';
-        input.value = JSON.stringify(data);
+        input.name = 'data_b64';
+        input.value = base64Data;
         form.appendChild(input);
         
         document.body.appendChild(form);
