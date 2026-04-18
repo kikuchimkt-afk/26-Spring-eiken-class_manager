@@ -557,7 +557,7 @@ function renderMainContent() {
             </td>
             <td>
                 <select id="rpContent_${p.id}" ${!pData.attended ? 'disabled' : ''} style="width: 210px; font-size: 13px; padding: 4px; border: 1px solid var(--border-color); border-radius: 4px;">
-                    ${getPastPaperOptions(p.grade).replace(`value="${pData.rpContent || ''}"`, `value="${pData.rpContent || ''}" selected`)}
+                    ${getPastPaperOptions(p.grade)}
                 </select>
             </td>
             <td>
@@ -572,7 +572,7 @@ function renderMainContent() {
             </td>
             <td>
                 <select id="apContent_${p.id}" ${!pData.attended ? 'disabled' : ''} style="width: 210px; font-size: 13px; padding: 4px; border: 1px solid var(--border-color); border-radius: 4px;">
-                    ${getPastPaperOptions(p.grade).replace(`value="${pData.apContent || ''}"`, `value="${pData.apContent || ''}" selected`)}
+                    ${getPastPaperOptions(p.grade)}
                 </select>
             </td>
             <td>
@@ -598,6 +598,12 @@ function renderMainContent() {
         }
         
         tbody.appendChild(tr);
+        
+        // ★ innerHTML生成後にDOMで直接valueをセット（日本語文字列でも確実に動作）
+        const rpSel = document.getElementById(`rpContent_${p.id}`);
+        if (rpSel && pData.rpContent) rpSel.value = pData.rpContent;
+        const apSel = document.getElementById(`apContent_${p.id}`);
+        if (apSel && pData.apContent) apSel.value = pData.apContent;
     });
     
     document.getElementById('participantCount').textContent = `${renderedCount}名`;
