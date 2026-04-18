@@ -53,8 +53,7 @@ function doPost(e) {
     
     // フォーム送信（application/x-www-form-urlencoded）の場合
     if (e.parameter && e.parameter.data) {
-      // ★ フロント側でencodeURIComponentされたデータをデコード
-      appDataStr = decodeURIComponent(e.parameter.data);
+      appDataStr = e.parameter.data;
     }
     // JSON送信（text/plain）の場合
     else if (e.postData && e.postData.contents) {
