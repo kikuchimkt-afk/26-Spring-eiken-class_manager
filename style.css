@@ -1,4 +1,8 @@
+/* ===== テーマ（ライト / ダーク 手動切替） =====
+   OSのダークモード設定には追従しない。
+   <html data-theme="dark"> 属性でダークモード化する。*/
 :root {
+    color-scheme: light;
     --bg-color: #f5f5f7;
     --sidebar-bg: rgba(255, 255, 255, 0.7);
     --card-bg: #ffffff;
@@ -18,17 +22,33 @@
     --shadow-soft: 0 4px 16px rgba(0, 0, 0, 0.04);
 }
 
-@media (prefers-color-scheme: dark) {
-    :root {
-        --bg-color: #000000;
-        --sidebar-bg: rgba(28, 28, 30, 0.7);
-        --card-bg: #1c1c1e;
-        --text-main: #f5f5f7;
-        --text-sec: #a1a1a6;
-        --border: #38383a;
-        --row-hover: #2c2c2e;
-        --input-bg: #2c2c2e;
-    }
+html[data-theme="dark"] {
+    color-scheme: dark;
+    --bg-color: #000000;
+    --sidebar-bg: rgba(28, 28, 30, 0.7);
+    --card-bg: #1c1c1e;
+    --text-main: #f5f5f7;
+    --text-sec: #a1a1a6;
+    --border: #38383a;
+    --row-hover: #2c2c2e;
+    --input-bg: #2c2c2e;
+    --shadow-soft: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+/* テーマ切替ボタン */
+.theme-toggle-btn {
+    background: none;
+    border: none;
+    font-size: 22px;
+    cursor: pointer;
+    padding: 6px 8px;
+    border-radius: 8px;
+    line-height: 1;
+    color: var(--text-main);
+    transition: background-color 0.15s;
+}
+.theme-toggle-btn:hover {
+    background-color: var(--row-hover);
 }
 
 * {
@@ -289,6 +309,12 @@ select, input[type="text"], textarea {
     font-size: 14px;
     transition: all 0.2s;
     outline: none;
+}
+
+/* テーブル内のプルダウン展開時のオプション文字色を確保（Windowsの自動ダーク化対策） */
+.data-table select option {
+    background-color: var(--card-bg);
+    color: var(--text-main);
 }
 
 select:focus, input[type="text"]:focus, textarea:focus {

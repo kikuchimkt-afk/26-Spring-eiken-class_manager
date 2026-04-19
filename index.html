@@ -4,7 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>英検勉強会 日誌管理</title>
-    <link rel="stylesheet" href="style.css?v=14">
+    <link rel="stylesheet" href="style.css?v=15">
+    <script>
+        // ちらつき防止のため、ページレンダリング前にテーマを適用
+        (function() {
+            try {
+                var saved = localStorage.getItem('eikenTheme');
+                if (saved === 'dark') {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                }
+            } catch (e) {}
+        })();
+    </script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <meta name="apple-mobile-web-app-capable" content="yes">
 </head>
@@ -55,6 +66,7 @@
                 
                 <div class="header-actions">
                     <span id="saveStatus" class="save-status"></span>
+                    <button id="themeToggleBtn" class="theme-toggle-btn" onclick="toggleTheme()" title="テーマ切替（ライト／ダーク）" aria-label="テーマ切替">🌙</button>
                     <button class="btn primary-btn" onclick="saveData()">データを保存</button>
                 </div>
             </header>
@@ -166,6 +178,6 @@
 
     <!-- Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="app.js?v=14"></script>
+    <script src="app.js?v=15"></script>
 </body>
 </html>

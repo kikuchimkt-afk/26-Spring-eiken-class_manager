@@ -38,6 +38,31 @@ function getPastPaperOptions(grade) {
     return options.join('\n');
 }
 
+// ★ 受験級ごとのカラーマッピング（ライト/ダーク両対応）
+function getGradeColor(grade) {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const colors = isDark ? {
+        '5級': '#60a5fa',         // 明るい青
+        '4級': '#34d399',         // 明るい緑
+        '3級': '#fbbf24',         // 明るいオレンジ
+        '準2級': '#f472b6',       // 明るいピンク
+        '準2級プラス': '#e879f9', // 明るいマゼンタ
+        '2級': '#a78bfa',         // 明るい紫
+        '準1級': '#f87171',       // 明るい赤
+        '1級': '#fb7185',         // 明るいローズ
+    } : {
+        '5級': '#3b82f6',    // 青
+        '4級': '#10b981',    // 緑
+        '3級': '#f59e0b',    // オレンジ
+        '準2級': '#e84393',  // ピンク
+        '準2級プラス': '#d946ef', // マゼンタ
+        '2級': '#7c3aed',    // 紫
+        '準1級': '#dc2626',  // 深紅
+        '1級': '#991b1b',    // ダーク赤
+    };
+    return colors[grade] || '#94a3b8';
+}
+
 // ====== GAS Web API URL ======
 const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbz2lwmv77SBY8kDSwJK5wlawVUg0CAOKmQxTpX-GNLi5DjnXYRn2jbYqI-U2I1__ofC/exec";
 
@@ -62,8 +87,35 @@ function init() {
     if (savedNewIds) {
         newParticipantIds = new Set(JSON.parse(savedNewIds));
     }
+    // テーマトグルのアイコンを初期化
+    updateThemeIcon();
     loadData();
     renderSidebar();
+}
+
+// ====== テーマ切替（ライト / ダーク） ======
+function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+    const next = current === 'dark' ? 'light' : 'dark';
+    if (next === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+        document.documentElement.removeAttribute('data-theme');
+    }
+    try { localStorage.setItem('eikenTheme', next); } catch (e) {}
+    updateThemeIcon();
+    // ★ 受験級の色分けもテーマに合わせて再描画
+    if (currentSessionId && hasRendered) {
+        renderMainContent();
+    }
+}
+
+function updateThemeIcon() {
+    const btn = document.getElementById('themeToggleBtn');
+    if (!btn) return;
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    btn.textContent = isDark ? '☀️' : '🌙';
+    btn.title = isDark ? 'ライトモードに切り替え' : 'ダークモードに切り替え';
 }
 
 // アプリ初期化・データ同期
@@ -813,7 +865,7 @@ function renderMainContent() {
                 <input type="text" value="${p.schoolYear || ''}" onchange="updateParticipantInfo('${p.id}', 'schoolYear', this.value)" style="width: 55px; text-align: center; border: 1px solid var(--border-color); border-radius: 4px; padding: 4px; font-size: 0.9em;">
             </td>
             <td>
-                <select onchange="updateParticipantInfo('${p.id}', 'grade', this.value)" style="width: 75px; padding: 4px; border: 1px solid var(--border-color); border-radius: 4px;">
+                <select onchange="updateParticipantInfo('${p.id}', 'grade', this.value)" style="width: 75px; padding: 4px; border: 1.5px solid ${getGradeColor(p.grade)}; border-radius: 4px; background-color: ${getGradeColor(p.grade)}33; color: ${getGradeColor(p.grade)}; font-weight: 700; appearance: none; -webkit-appearance: none; -moz-appearance: none;">
                     ${['1級', '準1級', '2級', '準2級プラス', '準2級', '3級', '4級', '5級'].map(g => `<option value="${g}" ${p.grade === g ? 'selected' : ''}>${g}</option>`).join('')}
                 </select>
             </td>
