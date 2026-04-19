@@ -2,103 +2,54 @@
 const FORM_SHEET_NAME = "フォームの回答 1";
 const STORAGE_SHEET_NAME = "アプリ保存用";
 
-// ★ セル1つ(50,000文字上限)を超えても安全に保存するため、
-//   Column A を縦にチャンク分割して JSON 文字列を保存する。
-//   A1 に「# of chunks」、A2..A(N+1) にチャンク本体を格納する。
-const CHUNK_SIZE = 40000;
-
-// 1. はじめに1回だけ「実行」して保存用シートを作成します
+// 1. はじめに1回だけ「実行」して保存用シートを作成します（以降は doPost 内で自動作成）
 function setup() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss.getSheetByName(STORAGE_SHEET_NAME)) {
-    const sheet = ss.insertSheet(STORAGE_SHEET_NAME);
-    sheet.getRange('A1').setValue('0'); // 0 chunks = empty
-  }
+  _getOrCreateStorageSheet_();
 }
 
-// ====== ストレージヘルパ ======
-
-// 保存されている JSON 文字列を取得（旧 A1 単一セル方式も自動で読む）
-function readStorageString_() {
+// 保存用シートを取得（無ければ自動作成）
+function _getOrCreateStorageSheet_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(STORAGE_SHEET_NAME);
-  if (!sheet) return "{}";
-
-  const a1 = sheet.getRange('A1').getValue();
-  const a1Str = (a1 === null || a1 === undefined) ? "" : String(a1);
-
-  // 新フォーマット: A1 は整数(チャンク数)
-  if (/^\d+$/.test(a1Str)) {
-    const chunkCount = parseInt(a1Str, 10);
-    if (chunkCount <= 0) return "{}";
-    const range = sheet.getRange(2, 1, chunkCount, 1).getValues();
-    let combined = "";
-    for (let i = 0; i < chunkCount; i++) {
-      combined += String(range[i][0] || "");
-    }
-    return combined || "{}";
+  let sheet = ss.getSheetByName(STORAGE_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(STORAGE_SHEET_NAME);
+    sheet.getRange('A1').setValue('{}');
   }
-
-  // 旧フォーマット: A1 に JSON 文字列が直接入っている
-  return a1Str || "{}";
+  return sheet;
 }
 
-// JSON 文字列をチャンク保存
-function writeStorageString_(jsonStr) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(STORAGE_SHEET_NAME);
-  if (!sheet) throw new Error("保存用シートが見つかりません。setup() を実行してください。");
-
-  // チャンクに分割
-  const chunks = [];
-  for (let i = 0; i < jsonStr.length; i += CHUNK_SIZE) {
-    chunks.push(jsonStr.substring(i, i + CHUNK_SIZE));
+// 保存されているデータを読み取り、現行フォーマットに正規化して返す
+function _readStoredData_(storageSheet) {
+  let rawStr = "{}";
+  if (storageSheet) {
+    rawStr = storageSheet.getRange('A1').getValue() || "{}";
+  }
+  let parsed = {};
+  try {
+    parsed = JSON.parse(rawStr);
+  } catch (err) {
+    parsed = {};
   }
 
-  // 既存データをクリア（Column A をすべて消す）
-  const lastRow = sheet.getLastRow();
-  if (lastRow > 0) {
-    sheet.getRange(1, 1, lastRow, 1).clearContent();
-  }
-
-  // A1 にチャンク数、A2.. にチャンク本体
-  sheet.getRange(1, 1).setValue(String(chunks.length));
-  if (chunks.length > 0) {
-    const values = chunks.map(c => [c]);
-    sheet.getRange(2, 1, chunks.length, 1).setValues(values);
-  }
-}
-
-// 現在保存されている wrapped オブジェクトを取得（後方互換）
-function readWrapped_() {
-  const str = readStorageString_();
-  let parsed;
-  try { parsed = JSON.parse(str); } catch (e) { parsed = {}; }
-
-  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-    // 新フォーマット（wrapper keys）検出
-    const hasWrapper = ('appData' in parsed) || ('sessionsInfo' in parsed) || ('participantsList' in parsed);
-    if (hasWrapper) {
-      return {
-        appData: parsed.appData || {},
-        sessionsInfo: parsed.sessionsInfo || null,
-        participantsList: parsed.participantsList || null,
-        updatedAt: parsed.updatedAt || 0
-      };
-    }
-    // 旧フォーマット: オブジェクトが appData 本体
+  // 新フォーマット: {appData, participantsList, sessionsInfo, lastUpdated}
+  // 旧フォーマット: appData のみがそのまま入っている
+  if (parsed && (parsed.appData !== undefined || parsed.participantsList !== undefined || parsed.sessionsInfo !== undefined)) {
     return {
-      appData: parsed,
-      sessionsInfo: null,
-      participantsList: null,
-      updatedAt: 0
+      appData: parsed.appData || {},
+      participantsList: parsed.participantsList || [],
+      sessionsInfo: parsed.sessionsInfo || [],
+      lastUpdated: parsed.lastUpdated || null
     };
   }
-
-  return { appData: {}, sessionsInfo: null, participantsList: null, updatedAt: 0 };
+  return {
+    appData: parsed || {},
+    participantsList: [],
+    sessionsInfo: [],
+    lastUpdated: null
+  };
 }
 
-// ====== 2. データの取得（GETリクエスト）======
+// ====== GET: データ取得 ======
 function doGet(e) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -107,99 +58,118 @@ function doGet(e) {
   let formResponses = [];
   if (formSheet) {
     const data = formSheet.getDataRange().getValues();
-    if (data.length > 1) {
-      const headers = data[0];
-      for (let i = 1; i < data.length; i++) {
-        let row = {};
-        headers.forEach((h, colIdx) => {
-          row[String(h).trim()] = data[i][colIdx];
-        });
-        formResponses.push(row);
-      }
+    const headers = data[0];
+    for (let i = 1; i < data.length; i++) {
+      let row = {};
+      headers.forEach((h, colIdx) => {
+        row[String(h).trim()] = data[i][colIdx];
+      });
+      formResponses.push(row);
     }
   }
 
-  const wrapped = readWrapped_();
+  // 保存用シート取得（無ければ自動作成）
+  const storageSheet = _getOrCreateStorageSheet_();
+  const stored = _readStoredData_(storageSheet);
 
   const response = {
+    status: 'ok',
     formResponses: formResponses,
-    appData: wrapped.appData,
-    sessionsInfo: wrapped.sessionsInfo,
-    participantsList: wrapped.participantsList,
-    updatedAt: wrapped.updatedAt
+    appData: stored.appData,
+    participantsList: stored.participantsList,
+    sessionsInfo: stored.sessionsInfo,
+    lastUpdated: stored.lastUpdated,
+    // 診断用メタ情報
+    _meta: {
+      storageSheetExists: true,
+      participantsListCount: (stored.participantsList || []).length,
+      sessionsInfoCount: (stored.sessionsInfo || []).length,
+      appDataSessionCount: Object.keys(stored.appData || {}).length,
+      serverTime: new Date().toISOString()
+    }
   };
 
   return ContentService.createTextOutput(JSON.stringify(response))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// ====== 3. データの保存（POSTリクエスト）======
-// 複数端末の衝突を軽減するため ScriptLock を使用する
+// ====== POST: データ保存 ======
 function doPost(e) {
+  // 複数端末からの同時書き込み競合を防止
   const lock = LockService.getScriptLock();
   try {
-    lock.waitLock(20000); // 最大20秒待機
-  } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({
-      status: "error",
-      message: "他の端末が保存中です。少し待って再試行してください。"
-    })).setMimeType(ContentService.MimeType.JSON);
+    lock.waitLock(10000);
+  } catch (lockErr) {
+    return ContentService.createTextOutput(JSON.stringify({ status: "error", message: "他の保存処理が進行中のためタイムアウトしました。" }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
 
   try {
-    let incomingStr = '{}';
+    let payloadStr = '{}';
+    let receivedVia = '';
 
-    // Base64送信（文字化け完全回避）
-    if (e.parameter && e.parameter.data_b64) {
-      const decoded = Utilities.base64Decode(e.parameter.data_b64);
-      incomingStr = Utilities.newBlob(decoded).getDataAsString('UTF-8');
+    // ★ Base64送信（文字化け完全回避）の場合
+    if (e && e.parameter && e.parameter.data_b64) {
+      var decoded = Utilities.base64Decode(e.parameter.data_b64);
+      payloadStr = Utilities.newBlob(decoded).getDataAsString('UTF-8');
+      receivedVia = 'data_b64';
     }
-    // application/x-www-form-urlencoded（フォールバック）
-    else if (e.parameter && e.parameter.data) {
-      incomingStr = e.parameter.data;
+    // フォーム送信（application/x-www-form-urlencoded）の場合（フォールバック）
+    else if (e && e.parameter && e.parameter.data) {
+      payloadStr = e.parameter.data;
+      receivedVia = 'param.data';
     }
-    // text/plain JSON（fetch から）
-    else if (e.postData && e.postData.contents) {
-      incomingStr = e.postData.contents;
+    // JSON / text/plain 送信の場合（fetch API 経由）
+    else if (e && e.postData && e.postData.contents) {
+      payloadStr = e.postData.contents;
+      receivedVia = 'postData.contents';
     }
 
-    let incoming;
-    try { incoming = JSON.parse(incomingStr); }
-    catch (err) { throw new Error('受信データのパースに失敗しました。'); }
+    let incoming = {};
+    try {
+      incoming = JSON.parse(payloadStr);
+    } catch (err) {
+      incoming = {};
+    }
 
-    // 入力形状の判定
-    //  - 新クライアント: { appData, sessionsInfo, participantsList, updatedAt }
-    //  - 旧クライアント: appData 直接
-    let incomingWrapped;
-    if (incoming && typeof incoming === 'object' &&
-        (('appData' in incoming) || ('sessionsInfo' in incoming) || ('participantsList' in incoming))) {
-      incomingWrapped = incoming;
+    // 保存用シート取得（無ければ自動作成）
+    const storageSheet = _getOrCreateStorageSheet_();
+
+    // 既存データ（現在のクラウド状態）を読み込み、送られていないキーは既存値を保持
+    const current = _readStoredData_(storageSheet);
+
+    let newAppData, newParticipantsList, newSessionsInfo;
+    if (incoming && (incoming.appData !== undefined || incoming.participantsList !== undefined || incoming.sessionsInfo !== undefined)) {
+      newAppData = incoming.appData !== undefined ? incoming.appData : current.appData;
+      newParticipantsList = incoming.participantsList !== undefined ? incoming.participantsList : current.participantsList;
+      newSessionsInfo = incoming.sessionsInfo !== undefined ? incoming.sessionsInfo : current.sessionsInfo;
     } else {
-      incomingWrapped = { appData: incoming };
+      // 旧クライアント（appDataだけを送ってくる）との互換
+      newAppData = (incoming && Object.keys(incoming).length > 0) ? incoming : current.appData;
+      newParticipantsList = current.participantsList;
+      newSessionsInfo = current.sessionsInfo;
     }
 
-    // 既存データを読んで、欠落フィールドは温存（部分更新を許容）
-    const current = readWrapped_();
-
-    const merged = {
-      appData:          (incomingWrapped.appData          !== undefined && incomingWrapped.appData          !== null) ? incomingWrapped.appData          : (current.appData          || {}),
-      sessionsInfo:     (incomingWrapped.sessionsInfo     !== undefined && incomingWrapped.sessionsInfo     !== null) ? incomingWrapped.sessionsInfo     : (current.sessionsInfo     || null),
-      participantsList: (incomingWrapped.participantsList !== undefined && incomingWrapped.participantsList !== null) ? incomingWrapped.participantsList : (current.participantsList || null),
-      updatedAt:        incomingWrapped.updatedAt || Date.now()
+    const toStore = {
+      appData: newAppData || {},
+      participantsList: newParticipantsList || [],
+      sessionsInfo: newSessionsInfo || [],
+      lastUpdated: new Date().toISOString()
     };
 
-    writeStorageString_(JSON.stringify(merged));
+    storageSheet.getRange('A1').setValue(JSON.stringify(toStore));
 
     return ContentService.createTextOutput(JSON.stringify({
       status: "success",
-      updatedAt: merged.updatedAt
+      lastUpdated: toStore.lastUpdated,
+      receivedVia: receivedVia,
+      savedParticipantsCount: toStore.participantsList.length,
+      savedSessionsCount: toStore.sessionsInfo.length
     })).setMimeType(ContentService.MimeType.JSON);
   } catch (error) {
-    return ContentService.createTextOutput(JSON.stringify({
-      status: "error",
-      message: String(error && error.message ? error.message : error)
-    })).setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({ status: "error", message: String(error && error.message ? error.message : error) }))
+      .setMimeType(ContentService.MimeType.JSON);
   } finally {
-    try { lock.releaseLock(); } catch (e) {}
+    try { lock.releaseLock(); } catch (_) {}
   }
 }

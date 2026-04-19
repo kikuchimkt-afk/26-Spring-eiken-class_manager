@@ -36,6 +36,9 @@
                     クラウドから最新読込
                 </button>
                 <small style="display: block; margin-top: 8px; color: var(--text-sec); font-size: 11px; text-align: center;">Googleフォームの回答と同期</small>
+                <button class="btn" style="width: 100%; display: block; text-align: center; background-color: transparent; color: var(--text-sec); cursor: pointer; font-size: 11px; border: 1px dashed var(--border); margin-top: 10px;" onclick="diagnoseCloudSync()">
+                    🔍 同期診断（開発者向け）
+                </button>
             </div>
         </aside>
 
@@ -98,11 +101,11 @@
                     <div class="form-grid">
                         <div class="form-group">
                             <label for="generalHomework">全体共通の宿題</label>
-                            <textarea id="generalHomework" rows="3" oninput="scheduleAutosave()" placeholder="全体に出した宿題があれば記入してください..."></textarea>
+                            <textarea id="generalHomework" rows="3" placeholder="全体に出した宿題があれば記入してください..."></textarea>
                         </div>
                         <div class="form-group">
                             <label for="generalNotes">日誌・引継ぎ事項</label>
-                            <textarea id="generalNotes" rows="3" oninput="scheduleAutosave()" placeholder="クラス全体の様子、次回の担当者への引継ぎ事項等..."></textarea>
+                            <textarea id="generalNotes" rows="3" placeholder="クラス全体の様子、次回の担当者への引継ぎ事項等..."></textarea>
                         </div>
                     </div>
                 </section>
