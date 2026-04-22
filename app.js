@@ -70,6 +70,7 @@ const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbz2lwmv77SBY8kD
 let currentSessionId = null;
 let appData = {};
 let newParticipantIds = new Set(); // 未確認の新規参加者を追跡（localStorageに永続化）
+let deletedParticipantNames = []; // ★ 削除済み参加者名リスト（フォーム再処理で復活防止）
 let hasRendered = false; // ★ 画面が一度でも描画されたかどうか（初回保存防止用）
 let currentSort = { key: null, asc: true }; // ★ ソート状態
 let cloudLastUpdated = null; // ★ クラウド最終更新時刻（デバッグ用）
@@ -86,6 +87,10 @@ function init() {
     const savedNewIds = localStorage.getItem('eikenNewParticipantIds');
     if (savedNewIds) {
         newParticipantIds = new Set(JSON.parse(savedNewIds));
+    }
+    const savedDeleted = localStorage.getItem('eikenDeletedParticipants');
+    if (savedDeleted) {
+        deletedParticipantNames = JSON.parse(savedDeleted);
     }
     // テーマトグルのアイコンを初期化
     updateThemeIcon();
@@ -170,6 +175,11 @@ async function syncWithCloud() {
         if (Array.isArray(data.sessionsInfo) && data.sessionsInfo.length > 0) {
             sessionsInfo = data.sessionsInfo;
             localStorage.setItem('eikenClassManagerSessions', JSON.stringify(sessionsInfo));
+        }
+
+        // ★ 3b. クラウドの削除済み参加者リストがあれば採用
+        if (Array.isArray(data.deletedParticipantNames)) {
+            deletedParticipantNames = data.deletedParticipantNames;
         }
 
         // 全セッションのエントリを保証
@@ -277,6 +287,7 @@ async function syncWithCloud() {
 
         localStorage.setItem('eikenClassManagerData', JSON.stringify(appData));
         localStorage.setItem('eikenClassManagerParticipants', JSON.stringify(participantsList));
+        localStorage.setItem('eikenDeletedParticipants', JSON.stringify(deletedParticipantNames));
 
         if (!currentSessionId && sessionsInfo.length > 0) {
             currentSessionId = sessionsInfo[0].id;
@@ -348,6 +359,9 @@ function processFormResponses(formResponses) {
         const rawName = String(row[nameKey] || '');
         if (!rawName.trim()) return;
         const name = rawName.replace(/[\s　]+/g, ' ');
+
+        // ★ 削除済み参加者はスキップ（フォーム回答からの復活を防止）
+        if (deletedParticipantNames.includes(name)) return;
         
         const schoolYear = yearKey ? String(row[yearKey] || '') : '';
         const gradeStr = gradeKey ? String(row[gradeKey]) : '';
@@ -389,6 +403,10 @@ function processFormResponses(formResponses) {
         Object.keys(appData).forEach(sessionId => {
             const sessionData = sessionsInfo.find(s => s.id === sessionId);
             if (!sessionData) return;
+
+            // ★ この日程から個別に除外された参加者はスキップ
+            const excludedIds = appData[sessionId].excludedParticipantIds || [];
+            if (excludedIds.includes(existing.id)) return;
             
             if (rawAttend) {
                 // 参加希望日の指定がある場合：マッチする日程だけに追加
@@ -452,6 +470,7 @@ async function saveData() {
     localStorage.setItem('eikenClassManagerData', JSON.stringify(appData));
     localStorage.setItem('eikenClassManagerParticipants', JSON.stringify(participantsList));
     localStorage.setItem('eikenClassManagerSessions', JSON.stringify(sessionsInfo));
+    localStorage.setItem('eikenDeletedParticipants', JSON.stringify(deletedParticipantNames));
 
     // 保存メッセージの表示
     const status = document.getElementById('saveStatus');
@@ -463,7 +482,8 @@ async function saveData() {
         const result = await saveToCloud({
             appData: appData,
             participantsList: participantsList,
-            sessionsInfo: sessionsInfo
+            sessionsInfo: sessionsInfo,
+            deletedParticipantNames: deletedParticipantNames
         });
         if (result && result.status === 'success') {
             status.textContent = `クラウドへ保存完了 ✓ (参加者${result.savedParticipantsCount ?? '-'}名)`;
@@ -488,6 +508,7 @@ async function pushStateToCloud() {
     localStorage.setItem('eikenClassManagerData', JSON.stringify(appData));
     localStorage.setItem('eikenClassManagerParticipants', JSON.stringify(participantsList));
     localStorage.setItem('eikenClassManagerSessions', JSON.stringify(sessionsInfo));
+    localStorage.setItem('eikenDeletedParticipants', JSON.stringify(deletedParticipantNames));
 
     const status = document.getElementById('saveStatus');
     if (status) {
@@ -499,7 +520,8 @@ async function pushStateToCloud() {
         const result = await saveToCloud({
             appData: appData,
             participantsList: participantsList,
-            sessionsInfo: sessionsInfo
+            sessionsInfo: sessionsInfo,
+            deletedParticipantNames: deletedParticipantNames
         });
         if (status) {
             if (result && result.status === 'success') {
@@ -770,6 +792,14 @@ function deleteFromCurrentSession() {
         delete appData[currentSessionId].participants[id];
     }
 
+    // ★ この日程の除外リストに追加（フォーム再処理で復活を防止）
+    if (!appData[currentSessionId].excludedParticipantIds) {
+        appData[currentSessionId].excludedParticipantIds = [];
+    }
+    if (!appData[currentSessionId].excludedParticipantIds.includes(id)) {
+        appData[currentSessionId].excludedParticipantIds.push(id);
+    }
+
     localStorage.setItem('eikenClassManagerData', JSON.stringify(appData));
     closeDeleteModal();
     renderMainContent();
@@ -781,6 +811,12 @@ function deleteFromCurrentSession() {
 function deleteFromAllSessions() {
     if (!participantToDelete) return;
     const id = participantToDelete;
+
+    // ★ 削除済みリストに名前を追加（フォーム再処理で復活を防止）
+    const pToDelete = participantsList.find(x => x.id === id);
+    if (pToDelete && !deletedParticipantNames.includes(pToDelete.name)) {
+        deletedParticipantNames.push(pToDelete.name);
+    }
 
     // 参加者リストから完全削除
     participantsList = participantsList.filter(x => x.id !== id);
@@ -794,6 +830,7 @@ function deleteFromAllSessions() {
 
     localStorage.setItem('eikenClassManagerParticipants', JSON.stringify(participantsList));
     localStorage.setItem('eikenClassManagerData', JSON.stringify(appData));
+    localStorage.setItem('eikenDeletedParticipants', JSON.stringify(deletedParticipantNames));
     closeDeleteModal();
     renderMainContent();
     // ★ クラウドへも同期

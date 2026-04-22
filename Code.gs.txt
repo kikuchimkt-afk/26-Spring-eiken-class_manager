@@ -38,6 +38,7 @@ function _readStoredData_(storageSheet) {
       appData: parsed.appData || {},
       participantsList: parsed.participantsList || [],
       sessionsInfo: parsed.sessionsInfo || [],
+      deletedParticipantNames: parsed.deletedParticipantNames || [],
       lastUpdated: parsed.lastUpdated || null
     };
   }
@@ -45,6 +46,7 @@ function _readStoredData_(storageSheet) {
     appData: parsed || {},
     participantsList: [],
     sessionsInfo: [],
+    deletedParticipantNames: [],
     lastUpdated: null
   };
 }
@@ -78,6 +80,7 @@ function doGet(e) {
     appData: stored.appData,
     participantsList: stored.participantsList,
     sessionsInfo: stored.sessionsInfo,
+    deletedParticipantNames: stored.deletedParticipantNames,
     lastUpdated: stored.lastUpdated,
     // 診断用メタ情報
     _meta: {
@@ -138,22 +141,25 @@ function doPost(e) {
     // 既存データ（現在のクラウド状態）を読み込み、送られていないキーは既存値を保持
     const current = _readStoredData_(storageSheet);
 
-    let newAppData, newParticipantsList, newSessionsInfo;
+    let newAppData, newParticipantsList, newSessionsInfo, newDeletedParticipantNames;
     if (incoming && (incoming.appData !== undefined || incoming.participantsList !== undefined || incoming.sessionsInfo !== undefined)) {
       newAppData = incoming.appData !== undefined ? incoming.appData : current.appData;
       newParticipantsList = incoming.participantsList !== undefined ? incoming.participantsList : current.participantsList;
       newSessionsInfo = incoming.sessionsInfo !== undefined ? incoming.sessionsInfo : current.sessionsInfo;
+      newDeletedParticipantNames = incoming.deletedParticipantNames !== undefined ? incoming.deletedParticipantNames : current.deletedParticipantNames;
     } else {
       // 旧クライアント（appDataだけを送ってくる）との互換
       newAppData = (incoming && Object.keys(incoming).length > 0) ? incoming : current.appData;
       newParticipantsList = current.participantsList;
       newSessionsInfo = current.sessionsInfo;
+      newDeletedParticipantNames = current.deletedParticipantNames;
     }
 
     const toStore = {
       appData: newAppData || {},
       participantsList: newParticipantsList || [],
       sessionsInfo: newSessionsInfo || [],
+      deletedParticipantNames: newDeletedParticipantNames || [],
       lastUpdated: new Date().toISOString()
     };
 
