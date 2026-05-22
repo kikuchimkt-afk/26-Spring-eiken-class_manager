@@ -1108,105 +1108,139 @@ function sortTable(key) {
 
 // ====== Excelダウンロード ======
 function downloadExcel() {
+    // ★ ライブラリのロード確認
+    if (typeof XLSX === 'undefined') {
+        alert('⚠ Excelライブラリの読み込みに失敗しました。\nインターネット接続を確認し、ページを再読み込みしてください。');
+        return;
+    }
+
     if (!appData || Object.keys(appData).length === 0) {
         alert('データがありません。');
         return;
     }
-    
-    const wb = XLSX.utils.book_new();
-    
-    // 全日程を1シートにまとめる「全体一覧」シート
-    const summaryRows = [];
-    summaryRows.push(['日程', '氏名', '学年', '受験級', 'タブレット', '出欠', 'ReadPass (年/回)', 'Rスコア', 'AudiPass (年/回)', 'Lスコア', '備考・個別宿題']);
-    
-    sessionsInfo.forEach(session => {
-        const sessionData = appData[session.id];
-        if (!sessionData || !sessionData.participants) return;
+
+    try {
+        const wb = XLSX.utils.book_new();
         
-        Object.keys(sessionData.participants).forEach(pid => {
-            const pData = sessionData.participants[pid];
-            const p = participantsList.find(x => x.id === pid);
-            if (!p) return;
+        // 全日程を1シートにまとめる「全体一覧」シート
+        const summaryRows = [];
+        summaryRows.push(['日程', '氏名', '学年', '受験級', 'タブレット', '出欠', 'ReadPass (年/回)', 'Rスコア', 'AudiPass (年/回)', 'Lスコア', '備考・個別宿題']);
+        
+        sessionsInfo.forEach(session => {
+            const sessionData = appData[session.id];
+            if (!sessionData || !sessionData.participants) return;
             
-            summaryRows.push([
-                session.date,
-                p.name,
-                p.schoolYear || '',
-                p.grade || '',
-                p.hasTablet ? '持参' : 'なし',
-                pData.attended ? '出席' : '欠席',
-                pData.rpContent || '',
-                pData.rpScore || '',
-                pData.apContent || '',
-                pData.apScore || '',
-                pData.remarks || ''
-            ]);
-        });
-    });
-    
-    const summaryWs = XLSX.utils.aoa_to_sheet(summaryRows);
-    // 列幅を設定
-    summaryWs['!cols'] = [
-        { wch: 14 }, // 日程
-        { wch: 14 }, // 氏名
-        { wch: 8 },  // 学年
-        { wch: 10 }, // 受験級
-        { wch: 8 },  // タブ
-        { wch: 6 },  // 出欠
-        { wch: 22 }, // ReadPass
-        { wch: 8 },  // Rスコア
-        { wch: 22 }, // AudiPass
-        { wch: 8 },  // Lスコア
-        { wch: 24 }, // 備考
-    ];
-    XLSX.utils.book_append_sheet(wb, summaryWs, '全体一覧');
-    
-    // 各日程ごとのシートを作成
-    sessionsInfo.forEach(session => {
-        const sessionData = appData[session.id];
-        if (!sessionData || !sessionData.participants) return;
-        
-        const rows = [];
-        rows.push(['氏名', '学年', '受験級', 'タブレット', '出欠', 'ReadPass (年/回)', 'Rスコア', 'AudiPass (年/回)', 'Lスコア', '備考・個別宿題']);
-        
-        Object.keys(sessionData.participants).forEach(pid => {
-            const pData = sessionData.participants[pid];
-            const p = participantsList.find(x => x.id === pid);
-            if (!p) return;
-            
-            rows.push([
-                p.name,
-                p.schoolYear || '',
-                p.grade || '',
-                p.hasTablet ? '持参' : 'なし',
-                pData.attended ? '出席' : '欠席',
-                pData.rpContent || '',
-                pData.rpScore || '',
-                pData.apContent || '',
-                pData.apScore || '',
-                pData.remarks || ''
-            ]);
+            Object.keys(sessionData.participants).forEach(pid => {
+                const pData = sessionData.participants[pid];
+                const p = participantsList.find(x => x.id === pid);
+                if (!p) return;
+                
+                summaryRows.push([
+                    session.date,
+                    p.name,
+                    p.schoolYear || '',
+                    p.grade || '',
+                    p.hasTablet ? '持参' : 'なし',
+                    pData.attended ? '出席' : '欠席',
+                    pData.rpContent || '',
+                    pData.rpScore || '',
+                    pData.apContent || '',
+                    pData.apScore || '',
+                    pData.remarks || ''
+                ]);
+            });
         });
         
-        // 全体宿題・メモ
-        rows.push([]);
-        rows.push(['全体宿題', sessionData.generalHomework || '']);
-        rows.push(['日誌・引継ぎ', sessionData.generalNotes || '']);
-        
-        const ws = XLSX.utils.aoa_to_sheet(rows);
-        ws['!cols'] = [
-            { wch: 14 }, { wch: 8 }, { wch: 10 }, { wch: 8 }, { wch: 6 },
-            { wch: 22 }, { wch: 8 }, { wch: 22 }, { wch: 8 }, { wch: 24 }
+        const summaryWs = XLSX.utils.aoa_to_sheet(summaryRows);
+        // 列幅を設定
+        summaryWs['!cols'] = [
+            { wch: 14 }, // 日程
+            { wch: 14 }, // 氏名
+            { wch: 8 },  // 学年
+            { wch: 10 }, // 受験級
+            { wch: 8 },  // タブ
+            { wch: 6 },  // 出欠
+            { wch: 22 }, // ReadPass
+            { wch: 8 },  // Rスコア
+            { wch: 22 }, // AudiPass
+            { wch: 8 },  // Lスコア
+            { wch: 24 }, // 備考
         ];
-        // シート名は31文字制限 & 不正文字除去
-        const sheetName = session.date.replace(/[\[\]\*\?\/\\]/g, '').substring(0, 31);
-        XLSX.utils.book_append_sheet(wb, ws, sheetName);
-    });
-    
-    // ダウンロード
-    const today = new Date();
-    const fileName = `英検勉強会_日誌_${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}.xlsx`;
-    XLSX.writeFile(wb, fileName);
+        XLSX.utils.book_append_sheet(wb, summaryWs, '全体一覧');
+        
+        // 各日程ごとのシートを作成
+        const usedSheetNames = new Set(['全体一覧']);
+        sessionsInfo.forEach(session => {
+            const sessionData = appData[session.id];
+            if (!sessionData || !sessionData.participants) return;
+            
+            const rows = [];
+            rows.push(['氏名', '学年', '受験級', 'タブレット', '出欠', 'ReadPass (年/回)', 'Rスコア', 'AudiPass (年/回)', 'Lスコア', '備考・個別宿題']);
+            
+            Object.keys(sessionData.participants).forEach(pid => {
+                const pData = sessionData.participants[pid];
+                const p = participantsList.find(x => x.id === pid);
+                if (!p) return;
+                
+                rows.push([
+                    p.name,
+                    p.schoolYear || '',
+                    p.grade || '',
+                    p.hasTablet ? '持参' : 'なし',
+                    pData.attended ? '出席' : '欠席',
+                    pData.rpContent || '',
+                    pData.rpScore || '',
+                    pData.apContent || '',
+                    pData.apScore || '',
+                    pData.remarks || ''
+                ]);
+            });
+            
+            // 全体宿題・メモ
+            rows.push([]);
+            rows.push(['全体宿題', sessionData.generalHomework || '']);
+            rows.push(['日誌・引継ぎ', sessionData.generalNotes || '']);
+            
+            const ws = XLSX.utils.aoa_to_sheet(rows);
+            ws['!cols'] = [
+                { wch: 14 }, { wch: 8 }, { wch: 10 }, { wch: 8 }, { wch: 6 },
+                { wch: 22 }, { wch: 8 }, { wch: 22 }, { wch: 8 }, { wch: 24 }
+            ];
+            // シート名は31文字制限 & 不正文字除去 & 重複防止
+            let sheetName = session.date.replace(/[\[\]\*\?\/\\:]/g, '').substring(0, 31);
+            let suffix = 2;
+            while (usedSheetNames.has(sheetName)) {
+                sheetName = session.date.replace(/[\[\]\*\?\/\\:]/g, '').substring(0, 28) + `_${suffix}`;
+                suffix++;
+            }
+            usedSheetNames.add(sheetName);
+            XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        });
+        
+        // ★ Blob方式でダウンロード（XLSX.writeFileはブラウザのセキュリティでブロックされる場合がある）
+        const today = new Date();
+        const fileName = `英検勉強会_日誌_${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}.xlsx`;
+        
+        const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+        const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        
+        // クリーンアップ
+        setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }, 100);
+
+        console.log('[downloadExcel] ダウンロード完了:', fileName);
+    } catch (e) {
+        console.error('[downloadExcel] エラー:', e);
+        alert('⚠ Excelファイルの生成に失敗しました。\n\nエラー: ' + (e.message || '不明なエラー') + '\n\nページを再読み込みして、再度お試しください。');
+    }
 }
 
 // ====== 診断機能（同期確認用） ======
